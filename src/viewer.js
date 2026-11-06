@@ -42,7 +42,9 @@ export class Viewer {
     this.clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 1e6);
     new ResizeObserver(() => this.resize()).observe(el);
     this.resize();
-    const loop = () => { this.controls.update(); this.renderer.render(this.scene, this.camera); requestAnimationFrame(loop); };
+    this.controls.maxPolarAngle = Math.PI * 0.495; // 地面より下に回り込まない
+    this.controls.autoRotateSpeed = 0.5; // 2.0 で 1 周 30 秒 → 0.5 で約 2 分
+    const loop = () => { this.controls.update(); this.onFrame?.(); this.renderer.render(this.scene, this.camera); requestAnimationFrame(loop); };
     loop();
   }
 
@@ -51,6 +53,29 @@ export class Viewer {
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+  }
+
+  /** 現在のオービット状態（モデル局所 ENU） */
+  getOrbit() {
+    const t = this.controls.target, p = this.camera.position;
+    const v = [p.x - t.x, p.y - t.y, p.z - t.z];
+    const hor = Math.hypot(v[0], v[1]);
+    return {
+      target: [t.x, t.y, t.z],
+      heading: (Math.atan2(-v[0], -v[1]) * 180) / Math.PI, // 視線の方位（北=0, 時計回り）
+      pitch: -(Math.atan2(v[2], hor) * 180) / Math.PI,
+      dist: Math.hypot(v[0], v[1], v[2]),
+    };
+  }
+
+  /** 地図側の操作を反映: カメラ位置と視線方向から注視点（target の高さの水平面との交点）を決める */
+  applyCamera(pos, dir) {
+    const t = this.controls.target;
+    let k = dir[2] < -0.05 ? (t.z - pos[2]) / dir[2] : this.getOrbit().dist;
+    k = Math.max(5, Math.min(k, 2000));
+    this.camera.position.set(pos[0], pos[1], Math.max(1, pos[2]));
+    t.set(pos[0] + dir[0] * k, pos[1] + dir[1] * k, pos[2] + dir[2] * k);
+    this.camera.lookAt(t);
   }
 
   setVisible(key, on) { if (this.groups[key]) this.groups[key].visible = on; }

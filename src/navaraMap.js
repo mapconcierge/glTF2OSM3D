@@ -6,6 +6,7 @@
 // 注意: Navara は地球儀表示のみで、Web メルカトル（2D）投影モードは提供されていない（v0.2.1 時点）。
 import * as THREE from 'three';
 import ThreeView, { MeshDesc, TERRARIUM_ELEVATION_DECODER, vector3ToGeodetic } from '@navaramap/three';
+import { localToLngLat, lngLatToLocal } from './geo.js';
 import { DefaultPlugin } from '@navaramap/three-default-plugin';
 import { MapLibreStylePlugin } from '@navaramap/maplibre-style';
 
@@ -176,21 +177,57 @@ export class NavaraMap {
     const dn = -back * Math.cos(hr), de = -back * Math.sin(hr);
     return {
       lng: lng + de / (111320 * Math.cos((lat * Math.PI) / 180)), lat: lat + dn / 110940,
-      height: h + 15 + up, heading, pitch, roll: 0,
+      height: h + up, heading, pitch, roll: 0,
     };
   }
 
   async lookAt(camera) {
     if (camera && Number.isFinite(camera.lng)) { this.view.setCamera(camera); return; }
     this.view.setCamera(this.cameraFor(this.place.lon, this.place.lat, 300));
-    const h = await this.groundHeight(this.place.lon, this.place.lat);
-    this.view.setCamera(this.cameraFor(this.place.lon, this.place.lat, h));
+    const h = (this.groundH = await this.groundHeight(this.place.lon, this.place.lat));
+    if (this.lastOrbit) this.setOrbit(this.lastOrbit, true);
+    else this.view.setCamera(this.cameraFor(this.place.lon, this.place.lat, h + 15));
   }
 
   async flyTo(lng, lat) {
     await this.ready;
     const h = await this.groundHeight(lng, lat);
-    this.view.flyTo(this.cameraFor(lng, lat, h), { duration: 1.5 });
+    this.view.flyTo(this.cameraFor(lng, lat, h + 15), { duration: 1.5 });
+  }
+
+  /** 配置点の地表高を取り直す（配置変更時） */
+  async refreshGround() {
+    await this.ready;
+    this.groundH = await this.groundHeight(this.place.lon, this.place.lat);
+    if (this.lastOrbit) this.setOrbit(this.lastOrbit, true);
+  }
+
+  /**
+   * 3D ビューのオービット状態を地図カメラへ反映。
+   * orbit = { target:[x,y,z]（モデル局所 ENU）, heading（モデル系の視線方位, 度）, pitch（度, 下向き負）, dist（m） }
+   */
+  setOrbit(orbit, force = false) {
+    this.lastOrbit = orbit;
+    if (!this.view || this.groundH === undefined) return;
+    const [lng, lat] = localToLngLat(orbit.target[0], orbit.target[1], this.place);
+    const heading = (((orbit.heading + this.place.heading) % 360) + 360) % 360;
+    const cam = this.cameraFor(lng, lat, this.groundH + orbit.target[2], { heading, pitch: orbit.pitch, dist: orbit.dist });
+    const key = [cam.lng.toFixed(8), cam.lat.toFixed(8), cam.height.toFixed(2), heading.toFixed(2), orbit.pitch.toFixed(2)].join();
+    if (!force && key === this.lastCamKey) return;
+    this.lastCamKey = key;
+    this.view.setCamera(cam);
+  }
+
+  /** 地図カメラ → モデル局所 ENU のカメラ位置・視線（地図を手動操作したときに 3D ビューへ反映） */
+  readOrbit() {
+    if (!this.view || this.groundH === undefined) return null;
+    const c = this.view.camera;
+    const g = c.positionGeographic, ori = c.orientation;
+    if (!g || !Number.isFinite(g.lng)) return null;
+    const D = Math.PI / 180;
+    const [x, y] = lngLatToLocal(g.lng, g.lat, this.place);
+    const hm = (ori.heading - this.place.heading) * D, p = ori.pitch * D;
+    return { pos: [x, y, g.height - this.groundH], dir: [Math.sin(hm) * Math.cos(p), Math.cos(hm) * Math.cos(p), Math.sin(p)] };
   }
 
   // MapLibre 版で使っていた API（GeoJSON レイヤ）は Navara では three.js オブジェクトで代替

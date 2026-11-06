@@ -42,6 +42,35 @@ $('roofTol').value = DEFAULT_OPTIONS.roofTol;
 $('minPartArea').value = DEFAULT_OPTIONS.minPartArea;
 syncPlaceInputs();
 
+// ---------------- カメラ連動（3D ビュー ⇔ 地図）と自動回転 ----------------
+const cam = { playing: true, master: 'viewer' };
+function setPlaying(on) {
+  cam.playing = on;
+  if (on) cam.master = 'viewer';
+  viewer.controls.autoRotate = on;
+  for (const b of document.querySelectorAll('.playBtn')) {
+    b.textContent = on ? '⏸ 一時停止' : '▶ 自動回転';
+    b.setAttribute('aria-pressed', String(on));
+  }
+}
+document.querySelectorAll('.playBtn').forEach((b) => b.addEventListener('click', () => setPlaying(!cam.playing)));
+// 手動操作が始まったら自動回転を止め、操作した側を基準（master）にする
+viewer.controls.addEventListener('start', () => { cam.master = 'viewer'; if (cam.playing) setPlaying(false); });
+for (const ev of ['pointerdown', 'wheel', 'touchstart']) {
+  $('map').addEventListener(ev, () => { cam.master = 'map'; if (cam.playing) setPlaying(false); }, { capture: true, passive: true });
+}
+viewer.onFrame = () => {
+  if (!st.model) return;
+  if (cam.master === 'viewer') mapView.setOrbit(viewer.getOrbit());
+  else {
+    const r = mapView.readOrbit();
+    if (r) viewer.applyCamera(r.pos, r.dir);
+  }
+};
+setPlaying(true);
+// 画角を地図（Navara）のカメラに合わせ、上下の見え方を揃える
+mapView.ready.then((v) => { const f = v?.camera?.fov; if (f) { viewer.camera.fov = f; viewer.camera.updateProjectionMatrix(); } });
+
 // ---------------- 入力 ----------------
 $('file').addEventListener('change', (e) => e.target.files.length && loadFiles(e.target.files));
 $('sample').addEventListener('change', async (e) => {
@@ -83,6 +112,7 @@ function setPlace(lon, lat) {
   place.lon = lon; place.lat = lat;
   syncPlaceInputs();
   mapView.setMarker(lon, lat);
+  mapView.refreshGround();
   refreshGeo();
 }
 function syncPlaceInputs() {
@@ -91,8 +121,8 @@ function syncPlaceInputs() {
   $('heading').value = place.heading;
   $('headingVal').textContent = `${place.heading}°`;
 }
-$('lon').addEventListener('change', () => { setPlace(+$('lon').value, place.lat); mapView.flyTo(place.lon, place.lat); });
-$('lat').addEventListener('change', () => { setPlace(place.lon, +$('lat').value); mapView.flyTo(place.lon, place.lat); });
+$('lon').addEventListener('change', () => { cam.master = 'viewer'; setPlace(+$('lon').value, place.lat); });
+$('lat').addEventListener('change', () => { cam.master = 'viewer'; setPlace(place.lon, +$('lat').value); });
 $('heading').addEventListener('input', () => { place.heading = +$('heading').value; $('headingVal').textContent = `${place.heading}°`; refreshGeo(); });
 ['osmName', 'buildingType', 'optColours', 'optLevels', 'floorHeight'].forEach((id) => $(id).addEventListener('change', refreshGeo));
 
@@ -166,7 +196,7 @@ async function convert(reloadModel) {
     mapView.setObject('original', objs.original, { visible: $('mapOriginal').checked });
     mapView.setObject('diff', objs.diff, { visible: $('mapDiff').checked });
     refreshGeo();
-    if (reloadModel) mapView.flyTo(place.lon, place.lat);
+    if (reloadModel) cam.master = 'viewer'; // 新しいモデルでは 3D ビューの初期カメラに地図を合わせる
     status(`変換完了（${((performance.now() - t0) / 1000).toFixed(2)} 秒）`);
   });
 }

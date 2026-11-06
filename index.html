@@ -111,10 +111,11 @@
   </aside>
 
   <main>
-    <div id="map"><div class="maplegend">地図: OSM タグから復元した形状（屋根形状込み）を地形上に表示。クリックで配置位置を変更。</div></div>
+    <div id="map"><button class="playBtn mapPlay" type="button" aria-pressed="true">⏸ 一時停止</button><div class="maplegend">地図: OSM タグから復元した形状（屋根形状込み）を地形上に表示。下の 3D ビューとカメラ連動。クリックで配置位置を変更。</div></div>
     <div id="viewerWrap">
       <div id="viewer"></div>
       <div class="vbar">
+        <button class="playBtn" type="button" aria-pressed="true" title="上下のビューを連動したまま自動でゆっくり周回します。ドラッグ等の手動操作で一時停止">⏸ 一時停止</button>
         <label><input id="vOriginal" type="checkbox" /> glTF 元モデル</label>
         <label><input id="vSimplified" type="checkbox" /> 単純化モデル</label>
         <label><input id="vError" type="checkbox" checked /> 誤差ヒートマップ</label>

@@ -101,6 +101,7 @@ node scripts/test-convert.mjs path/to/model.glb out.osm   # CLI で変換
 - 地図エンジン: [MapLibre Navara](https://github.com/maplibre/navara)（`@navaramap/three` v0.2.1, beta。Rust/WASM の GIS コア + three.js 描画の 3D 地球儀）
   - OSM タグから復元した形状（`roof:shape` による尖塔・ドーム・切妻などを含む）と元 glTF を、three.js オブジェクトとして経緯度・方位で地形上に配置
   - 初期版（MapLibre GL JS）では `fill-extrusion` が屋根形状を描けず LOD1 相当の押し出し表示だったため置き換えた（旧実装は git 履歴 `3741ea9` 以前を参照）
+- 上の地図と下の 3D ビューはカメラ連動。起動時は建物の周りをゆっくり自動周回（約 2 分で 1 周）し、「⏸ 一時停止 / ▶ 自動回転」ボタン（地図右下・3D ビュー左上）で切替。どちらかを手で操作すると自動回転は止まり、操作した側のカメラにもう一方が追従する
 - 背景: OSM 標準タイル（既定）/ 任意 XYZ タイル URL / OpenFreeMap（MapLibre スタイルプラグイン経由・実験的）
 - 地形: [Mapterhorn](https://mapterhorn.com/) 標高タイル（terrarium, 512px, maxzoom 16）
 - 既知の制約（Navara v0.2.1 時点）

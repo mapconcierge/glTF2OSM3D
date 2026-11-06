@@ -28,3 +28,16 @@ export function localToLngLat(x, y, place) {
 export function localAzimuthToGeo(az, place) {
   return (((az + place.heading) % 360) + 360) % 360;
 }
+
+/** [lon, lat] → モデル局所座標 [x, y]（localToLngLat の逆変換） */
+export function lngLatToLocal(lon, lat, place) {
+  const phi = place.lat * D2R;
+  const s = Math.sin(phi);
+  const w = Math.sqrt(1 - E2 * s * s);
+  const M = (A * (1 - E2)) / (w * w * w);
+  const N = A / w;
+  const e = (lon - place.lon) * D2R * N * Math.cos(phi);
+  const n = (lat - place.lat) * D2R * M;
+  const h = place.heading * D2R;
+  return [e * Math.cos(h) - n * Math.sin(h), e * Math.sin(h) + n * Math.cos(h)];
+}
