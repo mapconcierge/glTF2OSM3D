@@ -9,7 +9,7 @@ import { assignColours } from './colours.js';
 import { buildOsm, partTags } from './osm.js';
 import { Viewer, SHAPE_COLOURS, STEPPED_COLOUR, buildMapObjects } from './viewer.js';
 import { NavaraMap } from './navaraMap.js';
-import { localToLngLat } from './geo.js';
+import { localToLngLat, lngLatToLocal } from './geo.js';
 
 const $ = (id) => document.getElementById(id);
 $('appVersion').textContent = `v${__APP_VERSION__}`;
@@ -37,7 +37,7 @@ const place = { ...AGU_CHAPEL_PLACE, dz: 0 };
 
 // ---------------- 初期化 ----------------
 const viewer = new Viewer($('viewer'));
-const mapView = new NavaraMap($('map'), { center: [place.lon, place.lat], onPick: (lng, lat) => setPlace(lng, lat) });
+const mapView = new NavaraMap($('map'), { center: [place.lon, place.lat], onPick: (lng, lat) => { recordUndo(''); setPlace(lng, lat); } });
 window.__map = mapView; // デバッグ用
 window.__viewer = viewer; // デバッグ用
 const darkMq = matchMedia('(prefers-color-scheme: dark)');
@@ -91,6 +91,7 @@ $('sample').addEventListener('change', async (e) => {
     const r = await loadFromUrl(BASE + 'samples/' + smp.file);
     // 実在建物のサンプルは既知の位置・向きへ配置
     if (smp.place) { place.heading = smp.place.heading; place.dz = 0; setPlace(smp.place.lon, smp.place.lat); }
+    clearHistory(); // 別モデルの配置へは戻さない
     setGltf({ ...r, credit: smp.credit });
   });
 });
@@ -99,7 +100,7 @@ const drop = $('drop');
 ['dragleave', 'drop'].forEach((t) => document.addEventListener(t, (e) => { e.preventDefault(); if (t === 'drop' || e.target === document.documentElement) drop.classList.remove('hover'); }));
 document.addEventListener('drop', (e) => { drop.classList.remove('hover'); if (e.dataTransfer.files.length) loadFiles(e.dataTransfer.files); });
 
-async function loadFiles(files) { await guard(async () => setGltf(await loadFromFiles(files))); }
+async function loadFiles(files) { await guard(async () => { setGltf(await loadFromFiles(files)); clearHistory(); }); }
 
 function setGltf({ gltf, name, credit }) {
   st.gltf = gltf;
@@ -119,9 +120,14 @@ function setGltf({ gltf, name, credit }) {
 $('convert').addEventListener('click', () => convert(false));
 
 // ---------------- 配置 ----------------
+// 配置 = { lon, lat（WGS84, EPSG:4326）, heading（度, 時計回り）, dz（地表からの表示上の高さオフセット m） }
+function fmtDeg(v) { return `${+v.toFixed(1)}°`; } // 関数宣言（初期化時の syncPlaceInputs から先に呼ばれるため）
+function normDeg(v) { return Math.round((((v % 360) + 360) % 360) * 1000) / 1000; }
+let anchor = { lon: place.lon, lat: place.lat }; // キー移動の累計表示の基準（クリック・数値入力・サンプル読込で更新）
+
 function setPlace(lon, lat) {
   place.lon = lon; place.lat = lat;
-  nudge.e = nudge.n = 0;
+  anchor = { lon, lat };
   syncPlaceInputs();
   mapView.setMarker(lon, lat);
   mapView.refreshGround();
@@ -131,57 +137,112 @@ function syncPlaceInputs() {
   $('lon').value = place.lon.toFixed(7);
   $('lat').value = place.lat.toFixed(7);
   $('heading').value = place.heading;
-  $('headingVal').textContent = `${place.heading}°`;
+  $('headingVal').textContent = fmtDeg(place.heading);
   $('dz').value = +place.dz.toFixed(2);
 }
-$('dz').addEventListener('change', () => { place.dz = +$('dz').value || 0; mapView.setPlacement(place); });
 
-// ---------------- キーボードで位置オフセット（エディットビュー） ----------------
-// 矢印キー = 水平移動（画面の向き基準。↑ = 視線方向）、U / D = 上下。Shift = 大きく、⌘(Meta) / Ctrl = 細かく。
-const NUDGE = { normal: 0.5, coarse: 5, fine: 0.05 }; // m
-const nudge = { e: 0, n: 0, timer: 0, toastTimer: 0 };
+// ---------------- 配置のアンドゥ / リドゥ（Ctrl/⌘+Z、Ctrl/⌘+Shift+Z・Ctrl+Y） ----------------
+// 同じ種類の操作が短時間に続く場合（キーリピート・スライダーのドラッグ）は 1 回分としてまとめる
+const history = { undo: [], redo: [], lastKind: '', lastTime: 0 };
+const snap = () => ({ lon: place.lon, lat: place.lat, heading: place.heading, dz: place.dz });
+function recordUndo(kind) {
+  const now = performance.now();
+  if (kind && kind === history.lastKind && now - history.lastTime < 800) { history.lastTime = now; return; }
+  history.undo.push(snap());
+  if (history.undo.length > 200) history.undo.shift();
+  history.redo.length = 0;
+  history.lastKind = kind; history.lastTime = now;
+}
+function clearHistory() { history.undo.length = history.redo.length = 0; history.lastKind = ''; }
+function restore(from, to, label) {
+  const s = from.pop();
+  if (!s) { showToast(label === '元に戻す' ? '元に戻せる操作はありません' : 'やり直せる操作はありません'); return; }
+  to.push(snap());
+  history.lastKind = '';
+  Object.assign(place, s);
+  applyPlacement(true);
+  showToast(`${label}: 経度 ${place.lon.toFixed(7)}・緯度 ${place.lat.toFixed(7)}・向き ${fmtDeg(place.heading)}・高さ ${place.dz >= 0 ? '+' : '−'}${Math.abs(place.dz).toFixed(2)} m`);
+}
+
+/** place の変更を入力欄・地図・.osm に反映（地表高の再取得と .osm 再生成はキーリピート中に連発しないよう間引く） */
+let groundTimer = 0, geoTimer = 0;
+function applyPlacement(moved) {
+  syncPlaceInputs();
+  if (moved) mapView.setMarker(place.lon, place.lat);
+  mapView.setPlacement(place);
+  clearTimeout(groundTimer);
+  if (moved) groundTimer = setTimeout(() => mapView.refreshGround(), 300);
+  clearTimeout(geoTimer);
+  geoTimer = setTimeout(refreshGeo, 150);
+}
+
 const toast = Object.assign(document.createElement('div'), { className: 'nudgeToast' });
 $('map').append(toast);
+let toastTimer = 0;
+function showToast(text) {
+  toast.textContent = text;
+  toast.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('on'), 1600);
+}
+
+// ---------------- キーボード操作（エディットビュー） ----------------
+// 矢印キー = 水平移動（画面の向き基準。↑ = 視線方向）、U / D = 上下、R = 時計回りに回転。
+// Shift = 大きく、⌘(Meta) / Ctrl = 細かく。
+const NUDGE = { normal: 0.5, coarse: 5, fine: 0.05 }; // m
+const ROTATE = { normal: 1, coarse: 15, fine: 0.1 }; // 度
 // 地図をクリックしたらサイドバー入力欄のフォーカスを外し、すぐキー操作できるようにする
 $('map').addEventListener('pointerdown', () => { const a = document.activeElement; if (a instanceof HTMLElement && a !== document.body && !$('map').contains(a)) a.blur(); }, { capture: true });
-let geoTimer = 0;
 window.addEventListener('keydown', (ev) => {
   const t = ev.target;
-  if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName))) return;
+  if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName))) return; // 入力欄では通常の編集（ネイティブのアンドゥ含む）
   if (ev.altKey || !st.model) return;
   const k = ev.key.length === 1 ? ev.key.toLowerCase() : ev.key;
+  const mod = ev.metaKey || ev.ctrlKey;
+
+  if (mod && (k === 'z' || k === 'y')) {
+    ev.preventDefault(); ev.stopPropagation();
+    if (k === 'y' || ev.shiftKey) restore(history.redo, history.undo, 'やり直し');
+    else restore(history.undo, history.redo, '元に戻す');
+    return;
+  }
+
   const dirs = { ArrowUp: [0, 1, 0], ArrowDown: [0, -1, 0], ArrowRight: [1, 0, 0], ArrowLeft: [-1, 0, 0], u: [0, 0, 1], d: [0, 0, -1] };
   const d = dirs[k];
-  if (!d) return;
+  if (!d && k !== 'r') return;
   ev.preventDefault(); ev.stopPropagation();
-  const step = ev.metaKey || ev.ctrlKey ? NUDGE.fine : ev.shiftKey ? NUDGE.coarse : NUDGE.normal;
-  if (d[2]) place.dz = Math.round((place.dz + d[2] * step) * 1000) / 1000;
-  else {
+  const tbl = k === 'r' ? ROTATE : NUDGE;
+  const step = mod ? tbl.fine : ev.shiftKey ? tbl.coarse : tbl.normal;
+
+  if (k === 'r') {
+    recordUndo('rotate');
+    place.heading = normDeg(place.heading + step);
+    applyPlacement(false);
+    showToast(`回転 +${step}°（時計回り） ｜ 向き ${fmtDeg(place.heading)}`);
+    return;
+  }
+  if (d[2]) {
+    recordUndo('dz');
+    place.dz = Math.round((place.dz + d[2] * step) * 1000) / 1000;
+  } else {
+    recordUndo('move');
     // 画面上方向の地理方位 = 検証ビューの視線方位（モデル系）+ 配置の向き
     const az = ((viewer.getOrbit().heading + place.heading) * Math.PI) / 180;
     const fwd = d[1] * step, right = d[0] * step;
     const de = fwd * Math.sin(az) + right * Math.cos(az);
     const dn = fwd * Math.cos(az) - right * Math.sin(az);
     [place.lon, place.lat] = localToLngLat(de, dn, { lon: place.lon, lat: place.lat, heading: 0 });
-    nudge.e += de; nudge.n += dn;
-    mapView.setMarker(place.lon, place.lat);
   }
-  syncPlaceInputs();
-  mapView.setPlacement(place);
-  // 地表高の再取得と .osm 再生成はキーリピート中に連発しないよう間引く
-  clearTimeout(nudge.timer);
-  nudge.timer = setTimeout(() => mapView.refreshGround(), 300);
-  clearTimeout(geoTimer);
-  geoTimer = setTimeout(refreshGeo, 150);
-  const sg = (v) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2);
-  toast.textContent = `移動 ${step} m ｜ 累計 東 ${sg(nudge.e)} m・北 ${sg(nudge.n)} m ｜ 高さ ${sg(place.dz)} m`;
-  toast.classList.add('on');
-  clearTimeout(nudge.toastTimer);
-  nudge.toastTimer = setTimeout(() => toast.classList.remove('on'), 1500);
+  applyPlacement(!d[2]);
+  const [ae, an] = lngLatToLocal(place.lon, place.lat, { ...anchor, heading: 0 });
+  const sg = (v) => (Math.abs(v) < 0.005 ? '±' : v > 0 ? '+' : '−') + Math.abs(v).toFixed(2);
+  showToast(`移動 ${step} m ｜ 累計 東 ${sg(ae)} m・北 ${sg(an)} m ｜ 高さ ${sg(place.dz)} m`);
 }, { capture: true });
-$('lon').addEventListener('change', () => { cam.master = 'viewer'; setPlace(+$('lon').value, place.lat); });
-$('lat').addEventListener('change', () => { cam.master = 'viewer'; setPlace(place.lon, +$('lat').value); });
-$('heading').addEventListener('input', () => { place.heading = +$('heading').value; $('headingVal').textContent = `${place.heading}°`; refreshGeo(); });
+
+$('lon').addEventListener('change', () => { cam.master = 'viewer'; recordUndo(''); setPlace(+$('lon').value, place.lat); });
+$('lat').addEventListener('change', () => { cam.master = 'viewer'; recordUndo(''); setPlace(place.lon, +$('lat').value); });
+$('heading').addEventListener('input', () => { recordUndo('slider'); place.heading = +$('heading').value; $('headingVal').textContent = fmtDeg(place.heading); refreshGeo(); });
+$('dz').addEventListener('change', () => { recordUndo(''); place.dz = +$('dz').value || 0; mapView.setPlacement(place); });
 ['osmName', 'buildingType', 'optColours', 'optLevels', 'floorHeight'].forEach((id) => $(id).addEventListener('change', refreshGeo));
 
 // ---------------- 地図設定 ----------------
