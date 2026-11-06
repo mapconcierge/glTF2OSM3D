@@ -20,6 +20,12 @@ const SAMPLES = [
     file: 'wesley_chapel_agu_sagamihara.glb', label: 'ウェスレー・チャペル（青山学院大学 相模原キャンパス, LOD3）', place: AGU_CHAPEL_PLACE,
     credit: 'This work is based on "<a href="https://sketchfab.com/3d-models/wesley-chapel-agu-sagamihara-campus-lod3-e85177e3f4ed4f66a96d55f007abebe7" target="_blank" rel="noopener">Wesley Chapel, AGU Sagamihara Campus (LOD3)</a>" by <a href="https://sketchfab.com/ibukilego" target="_blank" rel="noopener">ibukilego</a>, licensed under <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>',
   },
+  {
+    file: 'media_center_agu_sagamihara.glb', label: 'B棟 メディアセンター（青山学院大学 相模原キャンパス, LOD2-3）',
+    // OSM relation 4537816「B棟」の外形に合わせて推定（外形内一致率 90%、逆向き 71%）
+    place: { lon: 139.4029083, lat: 35.5663779, heading: 320 },
+    credit: 'This work is based on "<a href="https://sketchfab.com/3d-models/media-center-agu-sagamihara-campus-lod2-3-0b462fbe088e4616857ef30ecab54a06" target="_blank" rel="noopener">Media Center, AGU Sagamihara Campus (LOD2-3)</a>" by <a href="https://sketchfab.com/ibukilego" target="_blank" rel="noopener">ibukilego</a>, licensed under <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>',
+  },
   { file: 'house_gabled.glb', label: '合成: 切妻屋根の住宅（煙突・軒の出あり）' },
   { file: 'complex_tower.glb', label: '合成: 複合ビル（塔・ドーム・ヴォールト・円錐台・キャンチレバー・アーチ門）' },
   { file: 'curved_tower.glb', label: '合成: 自由曲面タワー（回転体）' },

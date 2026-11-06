@@ -35,6 +35,7 @@ Converts a single glTF building model into an OpenStreetMap `.osm` file using Si
 | サンプル | 三角形（元 → 単純化） | パート数（直接 → 2 段） | IoU（直接 → 2 段） |
 |---|---|---|---|
 | ウェスレー・チャペル | 26,347 → 10,464 | 46（段状 12）→ 16（段状 2） | 96.9% → 93.9% |
+| B棟 メディアセンター | 22,253 → 17,544 | 294（陸屋根 290）→ 41 | 99.1% → 96.0% |
 | 複合ビル（合成） | 2,844 → 5,612 | 19 → 17 | 99.4% → 95.9% |
 | 自由曲面タワー（合成） | 5,376 → 2,886 | 36 → 1 | 98.1% → 81.4% |
 
@@ -67,6 +68,7 @@ Converts a single glTF building model into an OpenStreetMap `.osm` file using Si
 | ファイル | 内容 |
 |---|---|
 | `wesley_chapel_agu_sagamihara.glb`（既定） | 青山学院大学 相模原キャンパス ウェスレー・チャペル（LOD3, 実在建物）。OSM の既存外形（[way 99028196](https://www.openstreetmap.org/way/99028196)）に合わせて位置 139.4018359, 35.5664521、向き 51.5° に自動配置 |
+| `media_center_agu_sagamihara.glb` | 青山学院大学 相模原キャンパス B棟 メディアセンター（LOD2-3, 実在建物）。OSM の「B棟」外形（[relation 4537816](https://www.openstreetmap.org/relation/4537816)）に合わせて位置 139.4029083, 35.5663779、向き 320° に自動配置（外形内一致率 90%。モデルは張り出し部分の分 OSM 外形より幅が広い） |
 | `house_gabled.glb` | 合成: 切妻屋根の住宅（煙突・軒の出） |
 | `complex_tower.glb` | 合成: 塔・ドーム・ヴォールト・円錐台・キャンチレバー・アーチ門 |
 | `curved_tower.glb` | 合成: 自由曲面（回転体）のタワー |
@@ -118,10 +120,11 @@ node scripts/test-convert.mjs path/to/model.glb out.osm   # CLI で変換
 ## データソース・ライセンス
 
 - コード・合成サンプルモデル（`scripts/make-samples.mjs` で生成）: [CC0 1.0](LICENSE)
-- ウェスレー・チャペル / 相模原キャンパス全建物モデル（`public/samples/wesley_chapel_agu_sagamihara.glb`, `sampledata/`）: [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/)
+- ウェスレー・チャペル / B棟 メディアセンター / 相模原キャンパス全建物モデル（`public/samples/wesley_chapel_agu_sagamihara.glb`, `public/samples/media_center_agu_sagamihara.glb`, `sampledata/`）: [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/)
   - This work is based on "[Wesley Chapel, AGU Sagamihara Campus (LOD3)](https://sketchfab.com/3d-models/wesley-chapel-agu-sagamihara-campus-lod3-e85177e3f4ed4f66a96d55f007abebe7)" by [ibukilego](https://sketchfab.com/ibukilego) licensed under CC-BY-4.0
+  - This work is based on "[Media Center, AGU Sagamihara Campus (LOD2-3)](https://sketchfab.com/3d-models/media-center-agu-sagamihara-campus-lod2-3-0b462fbe088e4616857ef30ecab54a06)" by [ibukilego](https://sketchfab.com/ibukilego) licensed under CC-BY-4.0
   - This work is based on "[All buildings, AGU Sagamihara Campus (LOD2-3)](https://sketchfab.com/3d-models/all-buildings-agu-sagamihara-campus-lod2-3-38d128441293472ba2e9fab6d8eae3d3)" by [ibukilego](https://sketchfab.com/ibukilego) licensed under CC-BY-4.0
-- 初期配置の参照: OpenStreetMap の「C棟-チャペル」外形（© OpenStreetMap contributors, ODbL）
+- 初期配置の参照: OpenStreetMap の「C棟-チャペル」「B棟」外形（© OpenStreetMap contributors, ODbL）
 - 出力 `.osm` を OpenStreetMap に投稿した場合、そのデータは [ODbL](https://opendatacommons.org/licenses/odbl/) の下で提供されます
 - 地図: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)（OpenFreeMap 使用時は [OpenFreeMap](https://openfreemap.org/) / [OpenMapTiles](https://openmaptiles.org/)）
 - 標高: © [Mapterhorn](https://mapterhorn.com/attribution)
