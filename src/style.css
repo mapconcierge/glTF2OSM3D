@@ -93,3 +93,4 @@ main { display: grid; grid-template-rows: 1fr 1fr; min-height: 0; }
   #side { border-right: none; order: 2; overflow: visible; }
   main { grid-template-rows: 60vh 60vh; }
 }
+.credit { font-size: 11px; color: var(--muted); margin: 2px 0 6px; }

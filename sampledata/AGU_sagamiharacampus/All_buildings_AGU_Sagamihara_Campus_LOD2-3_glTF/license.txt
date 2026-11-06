@@ -1,0 +1,11 @@
+Model Information:
+* title:	All buildings, AGU Sagamihara Campus (LOD2-3)
+* source:	https://sketchfab.com/3d-models/all-buildings-agu-sagamihara-campus-lod2-3-38d128441293472ba2e9fab6d8eae3d3
+* author:	ibukilego (https://sketchfab.com/ibukilego)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "All buildings, AGU Sagamihara Campus (LOD2-3)" (https://sketchfab.com/3d-models/all-buildings-agu-sagamihara-campus-lod2-3-38d128441293472ba2e9fab6d8eae3d3) by ibukilego (https://sketchfab.com/ibukilego) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

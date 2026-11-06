@@ -10,14 +10,20 @@ import { MapView } from './map.js';
 
 const $ = (id) => document.getElementById(id);
 const BASE = import.meta.env.BASE_URL;
+// 青山学院大学 相模原キャンパス ウェスレー・チャペル（OSM way 99028196 の外形に合わせて位置・向きを推定）
+const AGU_CHAPEL_PLACE = { lon: 139.4018359, lat: 35.5664521, heading: 51.5 };
 const SAMPLES = [
-  ['house_gabled.glb', '切妻屋根の住宅（煙突・軒の出あり）'],
-  ['complex_tower.glb', '複合ビル（塔・ドーム・ヴォールト・円錐台・キャンチレバー・アーチ門）'],
-  ['curved_tower.glb', '自由曲面タワー（回転体）'],
+  {
+    file: 'wesley_chapel_agu_sagamihara.glb', label: 'ウェスレー・チャペル（青山学院大学 相模原キャンパス, LOD3）', place: AGU_CHAPEL_PLACE,
+    credit: 'This work is based on "<a href="https://sketchfab.com/3d-models/wesley-chapel-agu-sagamihara-campus-lod3-e85177e3f4ed4f66a96d55f007abebe7" target="_blank" rel="noopener">Wesley Chapel, AGU Sagamihara Campus (LOD3)</a>" by <a href="https://sketchfab.com/ibukilego" target="_blank" rel="noopener">ibukilego</a>, licensed under <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>',
+  },
+  { file: 'house_gabled.glb', label: '合成: 切妻屋根の住宅（煙突・軒の出あり）' },
+  { file: 'complex_tower.glb', label: '合成: 複合ビル（塔・ドーム・ヴォールト・円錐台・キャンチレバー・アーチ門）' },
+  { file: 'curved_tower.glb', label: '合成: 自由曲面タワー（回転体）' },
 ];
 
 const st = { gltf: null, name: '', model: null, res: null, ev: null, osm: null };
-const place = { lon: 139.7090, lat: 35.6608, heading: 0 };
+const place = { ...AGU_CHAPEL_PLACE };
 
 // ---------------- 初期化 ----------------
 const viewer = new Viewer($('viewer'));
@@ -26,7 +32,7 @@ const darkMq = matchMedia('(prefers-color-scheme: dark)');
 viewer.setBackground(darkMq.matches);
 darkMq.addEventListener('change', (e) => viewer.setBackground(e.matches));
 
-$('sample').innerHTML = '<option value="">— サンプルを選択 —</option>' + SAMPLES.map(([f, l]) => `<option value="${f}">${l}</option>`).join('');
+$('sample').innerHTML = '<option value="">— サンプルを選択 —</option>' + SAMPLES.map((x) => `<option value="${x.file}">${x.label}</option>`).join('');
 $('stepHeight').value = DEFAULT_OPTIONS.stepHeight;
 $('roofTol').value = DEFAULT_OPTIONS.roofTol;
 $('minPartArea').value = DEFAULT_OPTIONS.minPartArea;
@@ -36,7 +42,13 @@ syncPlaceInputs();
 $('file').addEventListener('change', (e) => e.target.files.length && loadFiles(e.target.files));
 $('sample').addEventListener('change', async (e) => {
   if (!e.target.value) return;
-  await guard(async () => { const r = await loadFromUrl(BASE + 'samples/' + e.target.value); setGltf(r); });
+  const smp = SAMPLES.find((x) => x.file === e.target.value);
+  await guard(async () => {
+    const r = await loadFromUrl(BASE + 'samples/' + smp.file);
+    // 実在建物のサンプルは既知の位置・向きへ配置
+    if (smp.place) { place.heading = smp.place.heading; setPlace(smp.place.lon, smp.place.lat); }
+    setGltf({ ...r, credit: smp.credit });
+  });
 });
 const drop = $('drop');
 ['dragenter', 'dragover'].forEach((t) => document.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('hover'); }));
@@ -45,10 +57,15 @@ document.addEventListener('drop', (e) => { drop.classList.remove('hover'); if (e
 
 async function loadFiles(files) { await guard(async () => setGltf(await loadFromFiles(files))); }
 
-function setGltf({ gltf, name }) {
+function setGltf({ gltf, name, credit }) {
   st.gltf = gltf;
   st.name = name;
   $('modelName').textContent = name;
+  // モデルのクレジット（CC BY 等）。glTF の asset.extras（Sketchfab 形式）からも取得
+  const ex = gltf.asset?.extras || {};
+  const auto = ex.title && ex.license ? `"${esc(ex.title)}" by ${esc(ex.author || '?')} — ${esc(ex.license)}${ex.source ? ` (${esc(ex.source)})` : ''}` : '';
+  $('credit').innerHTML = credit || auto;
+  $('credit').hidden = !(credit || auto);
   $('cellSize').value = '';
   if (!$('osmName').value) $('osmName').placeholder = name.replace(/\.(glb|gltf)$/i, '');
   convert(true);
@@ -215,7 +232,7 @@ function renderReport() {
     'OSM の height / min_height は地面からの高さで、地下部分の形状は表しません（building:levels:underground で階数のみ表現可）。');
   add('info', 'セルサイズ未満の凹凸', `解析解像度 ${c} m`,
     `窓・扉・マリオン・コーニスなど ${c} m 未満の凹凸は解析の段階で失われます（OSM の building:part としても表現対象外）。`);
-  add('info', 'マテリアル・テクスチャ', textured ? 'テクスチャ付きマテリアルあり' : '単色マテリアル',
+  add('info', 'マテリアル・テクスチャ', res.noColour ? '全マテリアルが同一色（色情報なし）→ 色タグは出力しません' : textured ? 'テクスチャ付きマテリアルあり' : '単色マテリアル',
     'OSM で表せるのは building:colour / roof:colour（＋ building:material / roof:material の分類）のみで、テクスチャ画像やファサードの模様は表現できません。' + (textured ? '本ツールはテクスチャの平均色を色タグに用いています。' : ''));
   add('info', '内部構造・レンダラー依存性', '',
     '内部空間・床スラブ・階高の変化は表せず、building:levels は推定値です。roof:shape の解釈（棟の向き・寄棟の勾配など）は OSM2World / F4 Map / OSM Buildings 等のレンダラーごとに異なるため、本ツールの「OSM 復元」表示も 1 つの解釈です。');
@@ -239,11 +256,12 @@ function renderReport() {
 }
 
 // ---------------- 共通 ----------------
+function esc(v) { return String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]); }
 function status(msg, err) { const s = $('status'); s.textContent = msg; s.className = err ? 'err' : ''; }
 async function guard(fn) {
   try { await fn(); } catch (e) { console.error(e); status('エラー: ' + (e.message || e), true); }
 }
 
 // 起動時にサンプルを読み込む
-$('sample').value = SAMPLES[1][0];
+$('sample').value = SAMPLES[0].file;
 $('sample').dispatchEvent(new Event('change'));

@@ -1,0 +1,11 @@
+Model Information:
+* title:	Wesley Chapel, AGU Sagamihara Campus (LOD3)
+* source:	https://sketchfab.com/3d-models/wesley-chapel-agu-sagamihara-campus-lod3-e85177e3f4ed4f66a96d55f007abebe7
+* author:	ibukilego (https://sketchfab.com/ibukilego)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Wesley Chapel, AGU Sagamihara Campus (LOD3)" (https://sketchfab.com/3d-models/wesley-chapel-agu-sagamihara-campus-lod3-e85177e3f4ed4f66a96d55f007abebe7) by ibukilego (https://sketchfab.com/ibukilego) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

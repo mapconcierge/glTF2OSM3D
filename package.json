@@ -7,7 +7,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "samples": "node scripts/make-samples.mjs",
-    "test": "node scripts/test-convert.mjs public/samples/house_gabled.glb && node scripts/test-convert.mjs public/samples/complex_tower.glb && node scripts/test-convert.mjs public/samples/curved_tower.glb"
+    "test": "node scripts/test-convert.mjs public/samples/house_gabled.glb && node scripts/test-convert.mjs public/samples/complex_tower.glb && node scripts/test-convert.mjs public/samples/curved_tower.glb && node scripts/test-convert.mjs public/samples/wesley_chapel_agu_sagamihara.glb"
   },
   "repository": {
     "type": "git",

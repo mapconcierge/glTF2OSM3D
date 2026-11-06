@@ -6,6 +6,9 @@ const hex = (rgb) => '#' + rgb.map((v) => Math.round(Math.max(0, Math.min(1, v))
 export function assignColours(model, res) {
   const { tris, triMat, materials } = model;
   const { grid } = res;
+  // 全マテリアルが同一色かつテクスチャ無し（色情報を持たないモデル）なら色タグは付けない
+  const uniq = new Set(materials.map((m) => hex(m.color)));
+  if (uniq.size <= 1 && !materials.some((m) => m.textured)) { res.noColour = true; return; }
   const { nx, c, x0, y0 } = grid;
   // 屋根色: 各パートのセル上面ヒット三角形のマテリアル最頻値
   for (const p of res.parts) {

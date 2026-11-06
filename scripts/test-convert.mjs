@@ -20,6 +20,7 @@ for (const node of root.listNodes()) {
   if (!mesh) continue;
   const W = node.getWorldMatrix();
   for (const prim of mesh.listPrimitives()) {
+    if (prim.getMode() !== 4) continue; // TRIANGLES 以外（LINES 等）は対象外
     const pos = prim.getAttribute('POSITION').getArray();
     const idx = prim.getIndices()?.getArray() ?? Array.from({ length: pos.length / 3 }, (_, q) => q);
     const tris = new Float32Array(idx.length * 3);
@@ -34,7 +35,7 @@ for (const node of root.listNodes()) {
 const model = buildModel(meshes, materials);
 console.log('model', model.stats, 'bbox', model.bbox.min.map((v) => v.toFixed(2)), model.bbox.max.map((v) => v.toFixed(2)));
 let t0 = performance.now();
-const res = analyze(model, {});
+const res = analyze(model, { debug: !!process.env.DEBUG });
 assignColours(model, res);
 console.log(`analyze ${(performance.now() - t0).toFixed(0)} ms, cell=${res.grid.c} grid=${res.grid.nx}x${res.grid.ny} regions=${res.regionCount} parts=${res.parts.length} dropped=${res.dropped.length}`);
 for (const p of res.parts) {

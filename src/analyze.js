@@ -20,6 +20,7 @@ export const DEFAULT_OPTIONS = {
   vStep: 0.5, // 区間結合の閾値（これより狭い隙間は埋める）[m]
   stepHeight: 1.0, // 曲面・傾斜底面を段状近似する際の段の高さ [m]
   roofTol: 0.35, // 屋根フィット許容 RMS [m]
+  roofRel: 0.04, // 高い屋根では許容 RMS を屋根高 × この比率まで緩める（尖塔など）
   minPartArea: 0.5, // これ未満の領域は省略 [m²]
   simplify: 0.75, // 簡略化許容値（セルサイズ倍率）
   mergeEaves: true, // 薄い張り出し（軒の出等）を隣接パートへ併合
@@ -261,8 +262,9 @@ function decompose(samps, B, depth, origin, ctx) {
     const out = pts.filter((s) => s.t - model.evalAt(s.x, s.y) > 2 * o.roofTol);
     if (model.ok && !components(out).some((cp) => cp.length >= ctx.minCells)) break; // 有意な突出物なし
     const io = orientedBox(inl, ctx.grid.c);
-    const f2 = bestFit(inl, io, B, o);
+    const f2 = bestFit(inl, io, B, o, Math.max(...pts.map((s) => s.t)));
     model = f2; modelObb = io;
+    if (o.debug && samps.length * ctx.grid.c ** 2 > 20) console.log(`[debug]  robust it${it} inl=${inl.length}/${pts.length} -> ${f2.shape}:${f2.rms.toFixed(2)} E${f2.E.toFixed(1)} h${f2.h.toFixed(1)} ok=${f2.ok}`);
     if (f2.ok) {
       const out2 = pts.filter((s) => s.t - f2.evalAt(s.x, s.y) > 2 * o.roofTol);
       if (pts.length - out2.length < 0.4 * pts.length) break;
@@ -273,6 +275,7 @@ function decompose(samps, B, depth, origin, ctx) {
     }
   }
   if (fit.ok) { emit(samps, B, fit, obb, origin, ctx); return; }
+  if (o.debug && samps.length * ctx.grid.c ** 2 > 20) console.log(`[debug] fit failed n=${samps.length} B=${B.toFixed(2)} top=${Math.min(...pts.map((s) => s.t)).toFixed(2)}..${Math.max(...pts.map((s) => s.t)).toFixed(2)} model=${model.shape}:${model.rms.toFixed(2)} cands=${(fit.cands || []).map((c) => `${c.shape}:${c.rms.toFixed(2)}${c.shape !== 'flat' ? `(E${c.E.toFixed(1)},h${c.h.toFixed(1)})` : ''}`).join(' ')}`);
 
   // (c) 段状（レイヤーケーキ）分解: 最下段の高さで全体をスラブ化し、それより高い部分を再帰処理
   const tops = pts.map((s) => s.t).sort((a, b) => a - b);
@@ -342,7 +345,7 @@ function shapeFn(shape, obb) {
   }
 }
 
-function bestFit(pts, obb, B, o) {
+function bestFit(pts, obb, B, o, capTop) {
   const n = pts.length;
   let mean = 0;
   for (const s of pts) mean += s.t;
@@ -407,8 +410,10 @@ function bestFit(pts, obb, B, o) {
   let best = cands[0];
   for (const cd of cands) if (cd.rms < best.rms * 0.9) best = cd;
   best.cands = cands;
-  const maxTop = pts.reduce((a, s) => Math.max(a, s.t), -Infinity);
-  best.ok = best.rms <= o.roofTol && (best.shape === 'flat' || (best.h >= 0.3 && best.E >= B - o.roofTol && best.E + best.h <= maxTop + o.roofTol));
+  // 頂部が実在しない（ドーナツ状領域で中心を外挿した等）フィットを除外。突出物を除いた再フィットでは領域全体の最高点を上限とする
+  const maxTop = capTop ?? pts.reduce((a, s) => Math.max(a, s.t), -Infinity);
+  const tolRms = best.shape === 'flat' ? o.roofTol : Math.max(o.roofTol, (o.roofRel ?? 0) * best.h);
+  best.ok = best.rms <= tolRms && (best.shape === 'flat' || (best.h >= 0.3 && best.E >= B - o.roofTol && best.E + best.h <= maxTop + Math.max(o.roofTol, 0.1 * best.h)));
   return best;
 }
 

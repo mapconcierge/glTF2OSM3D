@@ -39,10 +39,23 @@ Converts a single glTF building model into an OpenStreetMap `.osm` file using Si
 
 ## 使い方
 
+### サンプル
+
+| ファイル | 内容 |
+|---|---|
+| `wesley_chapel_agu_sagamihara.glb`（既定） | 青山学院大学 相模原キャンパス ウェスレー・チャペル（LOD3, 実在建物）。OSM の既存外形（[way 99028196](https://www.openstreetmap.org/way/99028196)）に合わせて位置 139.4018359, 35.5664521、向き 51.5° に自動配置 |
+| `house_gabled.glb` | 合成: 切妻屋根の住宅（煙突・軒の出） |
+| `complex_tower.glb` | 合成: 塔・ドーム・ヴォールト・円錐台・キャンチレバー・アーチ門 |
+| `curved_tower.glb` | 合成: 自由曲面（回転体）のタワー |
+
+チャペルの配置は、モデルの解析セルが OSM 外形の内側に入る割合が最大になる向き・中心を探索して求めました（一致率 97%、逆向き 76%）。
+
+`sampledata/` には元データ（チャペル単体および相模原キャンパス全建物の glTF / GLB / USDZ / OBJ）を収録しています。
+
 ### Web 版
 1. `.glb`（または `.gltf` + `.bin` + テクスチャ）をドロップ、もしくはサンプルを選択
 2. 上方向軸（glTF 標準は Y-up）・縮尺（メートル換算）・地盤面オフセットを確認
-3. 地図をクリック／マーカーをドラッグして配置、向きをスライダーで調整
+3. 地図をクリック／マーカーをドラッグして配置、向きをスライダーで調整（初期位置は青山学院大学 相模原キャンパスのチャペル）
 4. 結果パネルで「表現できない要素」と誤差を確認し、必要ならパラメータ（解析セル、段の高さ、屋根許容 RMS、最小パート面積）を調整して再変換
 5. `.osm をダウンロード` → JOSM 等で確認
 
@@ -75,7 +88,11 @@ node scripts/test-convert.mjs path/to/model.glb out.osm   # CLI で変換
 
 ## データソース・ライセンス
 
-- コード・サンプルモデル（`scripts/make-samples.mjs` で生成）: [CC0 1.0](LICENSE)
+- コード・合成サンプルモデル（`scripts/make-samples.mjs` で生成）: [CC0 1.0](LICENSE)
+- ウェスレー・チャペル / 相模原キャンパス全建物モデル（`public/samples/wesley_chapel_agu_sagamihara.glb`, `sampledata/`）: [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/)
+  - This work is based on "[Wesley Chapel, AGU Sagamihara Campus (LOD3)](https://sketchfab.com/3d-models/wesley-chapel-agu-sagamihara-campus-lod3-e85177e3f4ed4f66a96d55f007abebe7)" by [ibukilego](https://sketchfab.com/ibukilego) licensed under CC-BY-4.0
+  - This work is based on "[All buildings, AGU Sagamihara Campus (LOD2-3)](https://sketchfab.com/3d-models/all-buildings-agu-sagamihara-campus-lod2-3-38d128441293472ba2e9fab6d8eae3d3)" by [ibukilego](https://sketchfab.com/ibukilego) licensed under CC-BY-4.0
+- 初期配置の参照: OpenStreetMap の「C棟-チャペル」外形（© OpenStreetMap contributors, ODbL）
 - 出力 `.osm` を OpenStreetMap に投稿した場合、そのデータは [ODbL](https://opendatacommons.org/licenses/odbl/) の下で提供されます
 - 地図: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)、[OpenFreeMap](https://openfreemap.org/)、[OpenMapTiles](https://openmaptiles.org/)
 - 標高: © [Mapterhorn](https://mapterhorn.com/attribution)

@@ -8,6 +8,8 @@
  */
 export function buildModel(meshes, materials, opt = {}) {
   let n = 0;
+  // 9 の倍数でない端数（不完全な三角形）は捨てる
+  meshes = meshes.map((m) => ({ ...m, tris: m.tris.length % 9 ? m.tris.subarray(0, m.tris.length - (m.tris.length % 9)) : m.tris }));
   for (const m of meshes) n += m.tris.length;
   const tris = new Float32Array(n);
   const triMat = new Uint32Array(n / 9);
