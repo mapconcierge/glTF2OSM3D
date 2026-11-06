@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { ShapeUtils } from 'three';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const SHAPE_COLOURS = {
   flat: '#8da0cb', skillion: '#66c2a5', gabled: '#fc8d62', gabled_across: '#fc8d62', hipped: '#e78ac3',
@@ -34,7 +35,7 @@ export class Viewer {
     sun.position.set(-50, -80, 120);
     this.scene.add(sun);
     this.groups = {};
-    for (const k of ['original', 'error', 'recon', 'lost', 'added', 'ground']) {
+    for (const k of ['original', 'simplified', 'error', 'recon', 'lost', 'added', 'ground']) {
       this.groups[k] = new THREE.Group();
       this.scene.add(this.groups[k]);
     }
@@ -67,9 +68,10 @@ export class Viewer {
   mat(opts) { return new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, clippingPlanes: [this.clipPlane], side: THREE.DoubleSide, ...opts }); }
 
   /** 全表示の更新 */
-  update(model, res, ev, { recolour = false } = {}) {
+  update(model, res, ev, { recolour = false, simplified } = {}) {
     for (const k of Object.keys(this.groups)) this.clear(k);
     this.buildOriginal(model);
+    if (simplified) this.groups.simplified.add(new THREE.Mesh(modelGeometry(simplified, true), this.mat({ vertexColors: true })));
     this.buildError(ev);
     this.buildRecon(res);
     this.buildDiff(res, ev);
@@ -212,8 +214,25 @@ function subdivideRoof(a, b, c, step, z, tri, depth) {
   tri([a[0], a[1], z(a[0], a[1])], [b[0], b[1], z(b[0], b[1])], [c[0], c[1], z(c[0], c[1])]);
 }
 
+/** 解析用モデル → 頂点色付きジオメトリ（smooth=true なら折り目角 35° で法線を分ける＝丸めた角は滑らかに） */
+export function modelGeometry(model, smooth = false) {
+  let g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(model.tris, 3));
+  const col = new Float32Array(model.tris.length);
+  const c = new THREE.Color();
+  for (let t = 0; t < model.triMat.length; t++) {
+    const m = model.materials[model.triMat[t]]?.color || [0.8, 0.8, 0.8];
+    c.setRGB(m[0], m[1], m[2], THREE.SRGBColorSpace);
+    for (let v = 0; v < 3; v++) col.set([c.r, c.g, c.b], t * 9 + v * 3);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  if (smooth) g = toCreasedNormals(g, (35 * Math.PI) / 180);
+  else g.computeVertexNormals();
+  return g;
+}
+
 /** 地図（Navara）に載せるオブジェクト群（モデル局所 ENU 座標） */
-export function buildMapObjects(model, res, ev) {
+export function buildMapObjects(model, res, ev, simplified) {
   const std = (o) => new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide, ...o });
   const step = Math.max(res.grid.c * 2, 0.3);
   const recon = new THREE.Group();
@@ -244,5 +263,6 @@ export function buildMapObjects(model, res, ev) {
     segs.forEach(([x, y, z0, z1], q) => { M.makeScale(res.grid.c, res.grid.c, z1 - z0).setPosition(x, y, (z0 + z1) / 2); m.setMatrixAt(q, M); });
     diff.add(m);
   }
-  return { recon, original, diff };
+  const simp = simplified ? new THREE.Mesh(modelGeometry(simplified, true), std({ vertexColors: true })) : null;
+  return { recon, original, diff, simplified: simp };
 }

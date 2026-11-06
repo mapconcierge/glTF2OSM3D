@@ -1,7 +1,10 @@
 import './style.css';
+import { Group as THREE_Group } from 'three';
 import { loadFromFiles, loadFromUrl, sceneToModel } from './loader.js';
-import { analyze, autoCellSize, DEFAULT_OPTIONS } from './analyze.js';
-import { evaluate } from './evaluate.js';
+import { analyze, autoCellSize, voxelize, DEFAULT_OPTIONS } from './analyze.js';
+import { evaluate, compareVolumes } from './evaluate.js';
+import { simplifyModel, meshesToModel, SIMPLIFY_DEFAULTS } from './simplify.js';
+import { exportGlb } from './exportGlb.js';
 import { assignColours } from './colours.js';
 import { buildOsm, partTags } from './osm.js';
 import { Viewer, SHAPE_COLOURS, STEPPED_COLOUR, buildMapObjects } from './viewer.js';
@@ -28,6 +31,7 @@ const place = { ...AGU_CHAPEL_PLACE };
 const viewer = new Viewer($('viewer'));
 const mapView = new NavaraMap($('map'), { center: [place.lon, place.lat], onPick: (lng, lat) => setPlace(lng, lat) });
 window.__map = mapView; // デバッグ用
+window.__viewer = viewer; // デバッグ用
 const darkMq = matchMedia('(prefers-color-scheme: dark)');
 viewer.setBackground(darkMq.matches);
 darkMq.addEventListener('change', (e) => viewer.setBackground(e.matches));
@@ -96,12 +100,12 @@ $('heading').addEventListener('input', () => { place.heading = +$('heading').val
 $('baseMap').addEventListener('change', () => { $('xyzRow').hidden = $('baseMap').value !== 'xyz'; if ($('baseMap').value !== 'xyz') mapView.setBase($('baseMap').value); });
 $('xyzApply').addEventListener('click', () => mapView.setBase('xyz', $('xyzUrl').value.trim()));
 $('terrain').addEventListener('change', () => mapView.setTerrain($('terrain').checked));
-for (const [id, key] of [['mapRecon', 'recon'], ['mapOriginal', 'original'], ['mapDiff', 'diff']]) {
+for (const [id, key] of [['mapRecon', 'recon'], ['mapOriginal', 'original'], ['mapDiff', 'diff'], ['mapSimplified', 'simplified']]) {
   $(id).addEventListener('change', () => mapView.setObjectVisible(key, $(id).checked));
 }
 
 // ---------------- 3D ビュー ----------------
-const VIEW_TOGGLES = { vOriginal: 'original', vError: 'error', vRecon: 'recon', vLost: 'lost', vAdded: 'added' };
+const VIEW_TOGGLES = { vOriginal: 'original', vSimplified: 'simplified', vError: 'error', vRecon: 'recon', vLost: 'lost', vAdded: 'added' };
 for (const [id, key] of Object.entries(VIEW_TOGGLES)) {
   $(id).addEventListener('change', () => viewer.setVisible(key, $(id).checked));
   viewer.setVisible(key, $(id).checked);
@@ -132,13 +136,32 @@ async function convert(reloadModel) {
       minPartArea: +$('minPartArea').value || DEFAULT_OPTIONS.minPartArea,
       mergeEaves: $('mergeEaves').checked,
     };
-    st.res = analyze(st.model, opts);
-    assignColours(st.model, st.res);
-    st.ev = evaluate(st.model, st.res, { errTol: +$('errTol').value || 0.5 });
-    viewer.update(st.model, st.res, st.ev, { recolour: !reloadModel });
+    // ---- ステージ1: 単純化（任意） ----
+    let input = st.model;
+    st.simp = null;
+    if ($('simpOn').checked) {
+      const t1 = performance.now();
+      const so = {
+        detail: num('sDetail', SIMPLIFY_DEFAULTS.detail), heightTol: num('sHeightTol', SIMPLIFY_DEFAULTS.heightTol),
+        cornerRadius: num('sCorner', SIMPLIFY_DEFAULTS.cornerRadius, true), edgeRadius: num('sEdge', SIMPLIFY_DEFAULTS.edgeRadius, true),
+        minThickness: num('sThin', SIMPLIFY_DEFAULTS.minThickness, true), cellSize: opts.cellSize,
+      };
+      const r = simplifyModel(st.model, so);
+      st.simp = { r, display: meshesToModel(r.display, st.model.materials), plain: meshesToModel(r.plain, st.model.materials), ms: performance.now() - t1 };
+      input = $('simpRoundOsm').checked ? st.simp.display : st.simp.plain;
+    }
+    // ---- ステージ2: OSM 3D タグ化（評価は常に元モデル基準） ----
+    st.input = input;
+    st.res = analyze(input, opts);
+    assignColours(input, st.res);
+    const origIv = input === st.model ? undefined : voxelize(st.model, { vStep: st.res.options.vStep }, st.res.grid).cellIv;
+    st.ev = evaluate(st.model, st.res, { errTol: +$('errTol').value || 0.5, origIv });
+    if (st.simp) st.simp.cmp = compareVolumes(origIv, voxelize(st.simp.display, { vStep: st.res.options.vStep }, st.res.grid).cellIv, st.res.grid);
+    viewer.update(st.model, st.res, st.ev, { recolour: !reloadModel, simplified: st.simp?.display });
     $('clip').value = 100; $('clip').dispatchEvent(new Event('input'));
     renderReport();
-    const objs = buildMapObjects(st.model, st.res, st.ev);
+    const objs = buildMapObjects(st.model, st.res, st.ev, st.simp?.display);
+    mapView.setObject('simplified', objs.simplified ?? new THREE_Group(), { visible: $('mapSimplified').checked });
     mapView.setObject('recon', objs.recon, { visible: $('mapRecon').checked });
     mapView.setObject('original', objs.original, { visible: $('mapOriginal').checked });
     mapView.setObject('diff', objs.diff, { visible: $('mapDiff').checked });
@@ -147,6 +170,8 @@ async function convert(reloadModel) {
     status(`変換完了（${((performance.now() - t0) / 1000).toFixed(2)} 秒）`);
   });
 }
+
+function num(id, def, allowZero = false) { const v = parseFloat($(id).value); return Number.isFinite(v) && (allowZero ? v >= 0 : v > 0) ? v : def; }
 
 function osmOptions() {
   return {
@@ -165,6 +190,14 @@ function refreshGeo() {
 
 $('dlOsm').addEventListener('click', () => st.osm && download(st.osm.xml, baseName() + '.osm', 'application/xml'));
 $('dlGeojson').addEventListener('click', () => st.osm && download(JSON.stringify(st.osm.geojson, null, 1), baseName() + '.geojson', 'application/geo+json'));
+$('dlSimplified').addEventListener('click', async () => {
+  if (!st.simp) { status('単純化が無効です（「1.5 単純化」を有効にして変換してください）', true); return; }
+  const buf = await exportGlb(st.simp.display, { title: `${st.name} (simplified by glTF2OSM3D)` });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([buf], { type: 'model/gltf-binary' }));
+  a.download = baseName() + '_simplified.glb';
+  a.click();
+});
 $('dlShot').addEventListener('click', () => { const a = document.createElement('a'); a.href = viewer.renderer.domElement.toDataURL('image/png'); a.download = baseName() + '_3d.png'; a.click(); });
 const baseName = () => ($('osmName').value.trim() || st.name.replace(/\.(glb|gltf)$/i, '') || 'building').replace(/[^\w\-.　-鿿]/g, '_');
 function download(text, name, type) {
@@ -222,7 +255,20 @@ function renderReport() {
     '内部空間・床スラブ・階高の変化は表せず、building:levels は推定値です。roof:shape の解釈（棟の向き・寄棟の勾配など）は OSM2World / F4 Map / OSM Buildings 等のレンダラーごとに異なるため、本ツールの「OSM 復元」表示も 1 つの解釈です。');
 
   const sevLabel = { high: '表現不可（近似）', mid: '一部表現不可', low: '注意', info: '共通の制約' };
-  $('report').innerHTML = `
+  const sp = st.simp;
+  const fmtBytes = (b) => (b > 1e6 ? `${(b / 1e6).toFixed(2)} MB` : `${(b / 1e3).toFixed(0)} kB`);
+  const stage1 = sp ? `
+    <h3>ステージ1: 単純化（${(sp.ms / 1000).toFixed(2)} 秒）</h3>
+    <table class="kv">
+      <tr><th>三角形数</th><td>${model.stats.triangles.toLocaleString()} → <b>${sp.display.stats.triangles.toLocaleString()}</b>（丸めなし ${sp.plain.stats.triangles.toLocaleString()}）</td></tr>
+      <tr><th>頂点データ概算</th><td>${fmtBytes(model.stats.triangles * 3 * 12)} → ${fmtBytes(sp.display.stats.triangles * 3 * 12)}</td></tr>
+      <tr><th>マス（領域）数</th><td>${sp.r.regions.length}（平坦 ${sp.r.regions.filter((r) => r.flat).length} / 曲面・傾斜 ${sp.r.regions.filter((r) => !r.flat).length}）</td></tr>
+      <tr><th>一致度 IoU</th><td><b>${(sp.cmp.iou * 100).toFixed(1)}%</b>（欠落 <span class="lost">${f1(sp.cmp.lost)} m³</span> / 過剰 <span class="added">${f1(sp.cmp.added)} m³</span>）</td></tr>
+      <tr><th>除去した細部</th><td>平面 ${f1(sp.r.stats.removedCells * c * c)} m²（細部サイズ ${sp.r.options.detail} m 未満の突起・小領域）、薄い部材 ${f1(sp.r.stats.thinRemoved)} m³</td></tr>
+    </table>
+    <p class="muted">単純化モデル → ステージ2（OSM タグ化）${$('simpRoundOsm').checked ? '（角丸め形状を使用）' : '（角丸め前の形状を使用）'}。以下の一致度・誤差はすべて<b>元の glTF</b> を基準にした最終結果です。</p>
+    <h3>ステージ2: OSM 3D タグ化</h3>` : '';
+  $('report').innerHTML = stage1 + `
     <table class="kv">
       <tr><th>入力</th><td>${model.stats.meshes} メッシュ / ${model.stats.triangles.toLocaleString()} 三角形${model.stats.flipped ? `（${model.stats.flipped} メッシュの面の向きを反転）` : ''}</td></tr>
       <tr><th>範囲 (m)</th><td>${f1(model.bbox.max[0] - model.bbox.min[0])} × ${f1(model.bbox.max[1] - model.bbox.min[1])} × 高さ ${f1(model.bbox.max[2])}</td></tr>

@@ -33,17 +33,23 @@ export function autoCellSize(model) {
   return Math.min(2, Math.max(0.1, Math.round((ext / 200) * 100) / 100));
 }
 
-export function analyze(model, options = {}) {
-  const o = { ...DEFAULT_OPTIONS, ...options };
-  const c = o.cellSize > 0 ? o.cellSize : autoCellSize(model);
+/**
+ * 2.5D ボクセル化: 水平グリッドの各セル中心から鉛直レイを投射し、占有区間 [b, t] を求める。
+ * @param {object} model
+ * @param {{cellSize:number, vStep:number}} o  vStep: これより狭い鉛直方向の隙間は結合
+ * @param {object} [gridIn] 既存グリッド（別モデルを同一グリッドで比較する場合）
+ */
+export function voxelize(model, o, gridIn) {
+  let grid;
+  if (gridIn) grid = { ...gridIn };
+  else {
+    const c = o.cellSize > 0 ? o.cellSize : autoCellSize(model);
+    const b = model.bbox;
+    grid = { c, x0: b.min[0] - c, y0: b.min[1] - c, nx: Math.ceil((b.max[0] - b.min[0]) / c) + 3, ny: Math.ceil((b.max[1] - b.min[1]) / c) + 3 };
+  }
+  const { c, x0, y0, nx, ny } = grid;
   const { tris } = model;
   const nT = tris.length / 9;
-  const b = model.bbox;
-  const x0 = b.min[0] - c;
-  const y0 = b.min[1] - c;
-  const nx = Math.ceil((b.max[0] - b.min[0]) / c) + 3;
-  const ny = Math.ceil((b.max[1] - b.min[1]) / c) + 3;
-  const grid = { c, x0, y0, nx, ny };
   const jx = c * 0.000123457; // 辺上の二重ヒットを避ける微小ずらし
   const jy = c * 0.0000789123;
   const cx = (i) => x0 + (i + 0.5) * c + jx;
@@ -122,6 +128,14 @@ export function analyze(model, options = {}) {
     }
     if (out.length) cellIv[k] = out;
   }
+
+  return { grid, cellIv, belowGround };
+}
+
+export function analyze(model, options = {}) {
+  const o = { ...DEFAULT_OPTIONS, ...options };
+  const { grid, cellIv, belowGround } = voxelize(model, o);
+  const { c, nx, ny, cx, cy } = grid;
 
   // ---- 2. サンプルと領域（底面高さ別の連結成分） ----
   const samples = [];
@@ -343,6 +357,18 @@ function shapeFn(shape, obb) {
     case 'cone': return (u, v) => Math.max(0, 1 - Math.sqrt((u / hu) ** 2 + (v / hv) ** 2));
     default: return null;
   }
+}
+
+/**
+ * 点群 [{x,y,t}] に roof:shape プリセットを当てはめる（単純化ステージから利用）。
+ * 当てはまれば { shape, evalAt, rms, ... }、当てはまらなければ null。
+ */
+export function fitSurface(pts, c, B, options = {}) {
+  const o = { ...DEFAULT_OPTIONS, ...options };
+  if (pts.length < 9) return null;
+  // noCap: 頂部の外挿（例: 尖塔を除いた円錐屋根の頂点）を許す。呼び出し側で高さをクリップする前提
+  const fit = bestFit(pts, orientedBox(pts, c), B, o, o.noCap ? Infinity : undefined);
+  return fit.ok ? fit : null;
 }
 
 function bestFit(pts, obb, B, o, capTop) {

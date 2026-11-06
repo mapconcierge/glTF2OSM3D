@@ -41,7 +41,21 @@
     </section>
 
     <section>
-      <h2>3. 変換パラメータ</h2>
+      <h2>3. 単純化（ステージ1）</h2>
+      <label class="check"><input id="simpOn" type="checkbox" checked /> 単純化してから OSM に変換する（2 段パイプライン）</label>
+      <p class="muted">細部を除去したマスモデル（角・上端を少し丸めた軽量メッシュ）を作り、それを OSM 3D タグに変換します。</p>
+      <div class="grid2">
+        <label>細部サイズ (m) <input id="sDetail" type="number" step="0.1" min="0.1" value="1.0" title="これより小さい突起・切欠き・凹凸を除去" /></label>
+        <label>高さのまとめ (m) <input id="sHeightTol" type="number" step="0.1" min="0.05" value="0.4" title="この差以内のほぼ水平な面を同じ高さに揃える" /></label>
+        <label>角の丸め半径 (m) <input id="sCorner" type="number" step="0.1" min="0" value="0.6" /></label>
+        <label>上端の丸め (m) <input id="sEdge" type="number" step="0.05" min="0" value="0.3" /></label>
+        <label>薄い部材の除去 (m) <input id="sThin" type="number" step="0.05" min="0" value="0.3" title="これより薄い手すり・ルーバー・庇などを除去" /></label>
+        <label class="check"><input id="simpRoundOsm" type="checkbox" /> OSM にも角丸めを反映</label>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. OSM 変換パラメータ（ステージ2）</h2>
       <div class="grid2">
         <label>解析セル (m) <input id="cellSize" type="number" step="0.05" min="0.05" placeholder="自動" /></label>
         <label>段の高さ (m) <input id="stepHeight" type="number" step="0.1" min="0.1" /></label>
@@ -55,12 +69,12 @@
     </section>
 
     <section>
-      <h2>4. 結果と「表現できない部分」</h2>
+      <h2>5. 結果と「表現できない部分」</h2>
       <div id="report" class="report"><p class="muted">モデルを読み込むと表示されます。</p></div>
     </section>
 
     <section>
-      <h2>5. 出力</h2>
+      <h2>6. 出力</h2>
       <div class="grid2">
         <label>name <input id="osmName" type="text" /></label>
         <label>building= <input id="buildingType" type="text" value="yes" /></label>
@@ -71,6 +85,7 @@
       <div class="btns">
         <button id="dlOsm" class="primary">.osm をダウンロード</button>
         <button id="dlGeojson">GeoJSON</button>
+        <button id="dlSimplified">単純化 .glb</button>
         <button id="dlShot">3D 画像</button>
       </div>
       <p class="muted" id="osmStats"></p>
@@ -85,6 +100,7 @@
       <div id="xyzRow" class="row" hidden><input id="xyzUrl" type="url" placeholder="https://…/{z}/{x}/{y}.png" /><button id="xyzApply">適用</button></div>
       <label class="check"><input id="terrain" type="checkbox" checked /> 地形（Mapterhorn 標高）</label>
       <label class="check"><input id="mapRecon" type="checkbox" checked /> OSM 復元（roof:shape 込み）</label>
+      <label class="check"><input id="mapSimplified" type="checkbox" /> 単純化モデル（ステージ1）</label>
       <label class="check"><input id="mapOriginal" type="checkbox" /> glTF 元モデル</label>
       <label class="check"><input id="mapDiff" type="checkbox" /> 欠落（赤）/ 過剰（青）ボクセル</label>
     </section>
@@ -100,6 +116,7 @@
       <div id="viewer"></div>
       <div class="vbar">
         <label><input id="vOriginal" type="checkbox" /> glTF 元モデル</label>
+        <label><input id="vSimplified" type="checkbox" /> 単純化モデル</label>
         <label><input id="vError" type="checkbox" checked /> 誤差ヒートマップ</label>
         <label><input id="vRecon" type="checkbox" /> OSM 復元</label>
         <label><input id="vLost" type="checkbox" checked /> <span class="lost">■</span> 欠落</label>

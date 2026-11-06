@@ -4,8 +4,11 @@
 //  - 面の向き別に、許容誤差を超える面積を集計し「表現不可能な要素」の説明に用いる
 import { pointInPolygons, pointInRing } from './analyze.js';
 
-export function evaluate(model, res, { errTol = 0.5, maxVerts = 250000 } = {}) {
-  const { grid, cellIv, parts } = res;
+export function evaluate(model, res, { errTol = 0.5, maxVerts = 250000, origIv } = {}) {
+  // origIv: 元モデルを res と同一グリッドでボクセル化した区間（単純化パイプラインでは元モデル基準で評価する）
+  const { grid, parts } = res;
+  const cellIv = origIv ?? res.cellIv;
+  const occ = { grid, cellIv };
   const { nx, ny, c, cx, cy } = grid;
   const cellA = c * c;
 
@@ -72,7 +75,7 @@ export function evaluate(model, res, { errTol = 0.5, maxVerts = 250000 } = {}) {
     // 内部面（重なった別メッシュの内側など）: 法線方向に少し進んだ点が依然ソリッド内部なら外から見えない
     const gx = (pos[a * 3] + pos[b * 3] + pos[d * 3]) / 3, gy = (pos[a * 3 + 1] + pos[b * 3 + 1] + pos[d * 3 + 1]) / 3;
     const dl = c * 1.5;
-    if (occupied(res, gx + (nxv / len) * dl, gy + (nyv / len) * dl, zc + nz * dl)) { triCat[t] = 5; continue; }
+    if (occupied(occ, gx + (nxv / len) * dl, gy + (nyv / len) * dl, zc + nz * dl)) { triCat[t] = 5; continue; }
     let cat;
     if (Math.abs(nz) < 0.17) cat = 0;
     else if (nz >= 0.985) cat = 1;
@@ -213,3 +216,18 @@ export function subdivideMesh(model, maxLen, maxVerts) {
 }
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+
+/** 同一グリッド上の 2 つの区間集合の体積比較（A=基準, B=比較対象） */
+export function compareVolumes(ivA, ivB, grid) {
+  const cellA = grid.c * grid.c;
+  let va = 0, vb = 0, vi = 0;
+  const n = grid.nx * grid.ny;
+  for (let k = 0; k < n; k++) {
+    const A = mergeIv((ivA[k] || []).map((v) => [v.b, v.t]));
+    const B = mergeIv((ivB[k] || []).map((v) => [v.b, v.t]));
+    if (!A.length && !B.length) continue;
+    const la = A.reduce((s, v) => s + v[1] - v[0], 0), lb = B.reduce((s, v) => s + v[1] - v[0], 0);
+    va += la * cellA; vb += lb * cellA; vi += interLen(A, B) * cellA;
+  }
+  return { vA: va, vB: vb, inter: vi, iou: vi / Math.max(1e-9, va + vb - vi), lost: va - vi, added: vb - vi };
+}
