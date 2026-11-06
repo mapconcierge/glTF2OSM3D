@@ -75,10 +75,15 @@ node scripts/test-convert.mjs path/to/model.glb out.osm   # CLI で変換
 - `height` / `min_height` は地盤面（モデル最下点＋オフセット）からの高さ [m]
 
 ### 地図
-- MapLibre GL JS（Globe / Web Mercator 切替）
-- 背景: OpenFreeMap（デフォルト）/ OSM 標準タイル / 任意 XYZ タイル URL
-- 地形: [Mapterhorn](https://mapterhorn.com/) 標高タイル（terrarium）
-- 地図上の押し出し表示は MapLibre の `fill-extrusion` のため屋根形状を描けません（3D ビューで確認）
+- 地図エンジン: [MapLibre Navara](https://github.com/maplibre/navara)（`@navaramap/three` v0.2.1, beta。Rust/WASM の GIS コア + three.js 描画の 3D 地球儀）
+  - OSM タグから復元した形状（`roof:shape` による尖塔・ドーム・切妻などを含む）と元 glTF を、three.js オブジェクトとして経緯度・方位で地形上に配置
+  - 初期版（MapLibre GL JS）では `fill-extrusion` が屋根形状を描けず LOD1 相当の押し出し表示だったため置き換えた（旧実装は git 履歴 `3741ea9` 以前を参照）
+- 背景: OSM 標準タイル（既定）/ 任意 XYZ タイル URL / OpenFreeMap（MapLibre スタイルプラグイン経由・実験的）
+- 地形: [Mapterhorn](https://mapterhorn.com/) 標高タイル（terrarium, 512px, maxzoom 16）
+- 既知の制約（Navara v0.2.1 時点）
+  - 地球儀表示のみで、Web メルカトル（2D）投影への切替は未対応
+  - OpenFreeMap（MapLibre スタイル）は道路等が描画されず、配置した建物も見えなくなるため既定にしていない
+  - WASM・大気散乱テーブル等を含むため、初回読み込みが重い（数十 MB）
 
 ## 注意
 
@@ -94,9 +99,9 @@ node scripts/test-convert.mjs path/to/model.glb out.osm   # CLI で変換
   - This work is based on "[All buildings, AGU Sagamihara Campus (LOD2-3)](https://sketchfab.com/3d-models/all-buildings-agu-sagamihara-campus-lod2-3-38d128441293472ba2e9fab6d8eae3d3)" by [ibukilego](https://sketchfab.com/ibukilego) licensed under CC-BY-4.0
 - 初期配置の参照: OpenStreetMap の「C棟-チャペル」外形（© OpenStreetMap contributors, ODbL）
 - 出力 `.osm` を OpenStreetMap に投稿した場合、そのデータは [ODbL](https://opendatacommons.org/licenses/odbl/) の下で提供されます
-- 地図: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)、[OpenFreeMap](https://openfreemap.org/)、[OpenMapTiles](https://openmaptiles.org/)
+- 地図: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)（OpenFreeMap 使用時は [OpenFreeMap](https://openfreemap.org/) / [OpenMapTiles](https://openmaptiles.org/)）
 - 標高: © [Mapterhorn](https://mapterhorn.com/attribution)
-- ライブラリ: [MapLibre GL JS](https://maplibre.org/)（BSD-3-Clause）、[three.js](https://threejs.org/)（MIT）、[glTF Transform](https://gltf-transform.dev/)（MIT, サンプル生成のみ）
+- ライブラリ: [MapLibre Navara](https://github.com/maplibre/navara)（MIT OR Apache-2.0）、[three.js](https://threejs.org/)（MIT）、[glTF Transform](https://gltf-transform.dev/)（MIT, サンプル生成のみ）
 
 ## 著者
 

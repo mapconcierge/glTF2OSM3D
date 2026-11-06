@@ -4,9 +4,8 @@ import { analyze, autoCellSize, DEFAULT_OPTIONS } from './analyze.js';
 import { evaluate } from './evaluate.js';
 import { assignColours } from './colours.js';
 import { buildOsm, partTags } from './osm.js';
-import { localToLngLat } from './geo.js';
-import { Viewer, SHAPE_COLOURS, STEPPED_COLOUR } from './viewer.js';
-import { MapView } from './map.js';
+import { Viewer, SHAPE_COLOURS, STEPPED_COLOUR, buildMapObjects } from './viewer.js';
+import { NavaraMap } from './navaraMap.js';
 
 const $ = (id) => document.getElementById(id);
 const BASE = import.meta.env.BASE_URL;
@@ -27,7 +26,8 @@ const place = { ...AGU_CHAPEL_PLACE };
 
 // ---------------- 初期化 ----------------
 const viewer = new Viewer($('viewer'));
-const mapView = new MapView($('map'), { center: [place.lon, place.lat], onPick: (lng, lat) => setPlace(lng, lat) });
+const mapView = new NavaraMap($('map'), { center: [place.lon, place.lat], onPick: (lng, lat) => setPlace(lng, lat) });
+window.__map = mapView; // デバッグ用
 const darkMq = matchMedia('(prefers-color-scheme: dark)');
 viewer.setBackground(darkMq.matches);
 darkMq.addEventListener('change', (e) => viewer.setBackground(e.matches));
@@ -95,11 +95,10 @@ $('heading').addEventListener('input', () => { place.heading = +$('heading').val
 // ---------------- 地図設定 ----------------
 $('baseMap').addEventListener('change', () => { $('xyzRow').hidden = $('baseMap').value !== 'xyz'; if ($('baseMap').value !== 'xyz') mapView.setBase($('baseMap').value); });
 $('xyzApply').addEventListener('click', () => mapView.setBase('xyz', $('xyzUrl').value.trim()));
-$('projection').addEventListener('change', () => mapView.setProjection($('projection').value));
 $('terrain').addEventListener('change', () => mapView.setTerrain($('terrain').checked));
-$('hideBase3d').addEventListener('change', () => mapView.setHideBase3d($('hideBase3d').checked));
-$('mapParts').addEventListener('change', () => mapView.setLayerVisible('parts-ext', $('mapParts').checked));
-$('mapErr').addEventListener('change', () => mapView.setLayerVisible('err-fill', $('mapErr').checked));
+for (const [id, key] of [['mapRecon', 'recon'], ['mapOriginal', 'original'], ['mapDiff', 'diff']]) {
+  $(id).addEventListener('change', () => mapView.setObjectVisible(key, $(id).checked));
+}
 
 // ---------------- 3D ビュー ----------------
 const VIEW_TOGGLES = { vOriginal: 'original', vError: 'error', vRecon: 'recon', vLost: 'lost', vAdded: 'added' };
@@ -139,6 +138,10 @@ async function convert(reloadModel) {
     viewer.update(st.model, st.res, st.ev, { recolour: !reloadModel });
     $('clip').value = 100; $('clip').dispatchEvent(new Event('input'));
     renderReport();
+    const objs = buildMapObjects(st.model, st.res, st.ev);
+    mapView.setObject('recon', objs.recon, { visible: $('mapRecon').checked });
+    mapView.setObject('original', objs.original, { visible: $('mapOriginal').checked });
+    mapView.setObject('diff', objs.diff, { visible: $('mapDiff').checked });
     refreshGeo();
     if (reloadModel) mapView.flyTo(place.lon, place.lat);
     status(`変換完了（${((performance.now() - t0) / 1000).toFixed(2)} 秒）`);
@@ -157,26 +160,7 @@ function refreshGeo() {
   st.osm = buildOsm(st.res, place, osmOptions());
   $('osmPreview').textContent = st.osm.xml.length > 200000 ? st.osm.xml.slice(0, 200000) + '\n…（省略）' : st.osm.xml;
   $('osmStats').textContent = `node ${st.osm.stats.nodes} / way ${st.osm.stats.ways} / relation ${st.osm.stats.relations}`;
-  // 地図: パートの押し出し（fill-extrusion は屋根形状を描けないため最高高さで表示）
-  const ring = (r) => { const c = r.map(([x, y]) => localToLngLat(x, y, place)); c.push(c[0]); return c; };
-  const toGeom = (polys) => ({ type: 'MultiPolygon', coordinates: polys.map((p) => [p.outer, ...p.holes].map(ring)) });
-  mapView.setData('parts', {
-    type: 'FeatureCollection',
-    features: st.res.parts.map((p) => ({
-      type: 'Feature',
-      properties: { _h: p.H, _b: p.B, _colour: $('optColours').checked && p.wallColour ? p.wallColour : (p.origin === 'stepped' ? STEPPED_COLOUR : SHAPE_COLOURS[p.shape]) },
-      geometry: toGeom(p.polygons),
-    })),
-  });
-  mapView.setData('outline', { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: toGeom(st.res.outline) }] });
-  const h = st.res.grid.c / 2;
-  mapView.setData('err', {
-    type: 'FeatureCollection',
-    features: [...st.ev.cellErr.values()].map((e) => ({
-      type: 'Feature', properties: { e: e.lost + e.added },
-      geometry: { type: 'Polygon', coordinates: [ring([[e.x - h, e.y - h], [e.x + h, e.y - h], [e.x + h, e.y + h], [e.x - h, e.y + h]])] },
-    })),
-  });
+  mapView.setPlacement(place);
 }
 
 $('dlOsm').addEventListener('click', () => st.osm && download(st.osm.xml, baseName() + '.osm', 'application/xml'));

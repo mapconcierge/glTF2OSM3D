@@ -22,7 +22,11 @@
   },
   "homepage": "https://github.com/mapconcierge/glTF2OSM3D#readme",
   "dependencies": {
-    "maplibre-gl": "^6.16.0",
+    "@navaramap/maplibre-style": "^0.2.1",
+    "@navaramap/three": "^0.2.1",
+    "@navaramap/three-default-plugin": "^0.2.1",
+    "@navaramap/three-plugins": "^0.2.1",
+    "postprocessing": "^6.39.6",
     "three": "^0.187.0"
   },
   "devDependencies": {

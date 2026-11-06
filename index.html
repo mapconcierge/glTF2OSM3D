@@ -79,16 +79,14 @@
     </section>
 
     <section>
-      <h2>地図設定</h2>
-      <div class="grid2">
-        <label>背景 <select id="baseMap"><option value="openfreemap">OpenFreeMap (vector)</option><option value="osm">OSM 標準 (raster)</option><option value="xyz">任意 XYZ タイル</option></select></label>
-        <label>投影 <select id="projection"><option value="globe">Globe</option><option value="mercator">Web Mercator</option></select></label>
-      </div>
+      <h2>地図設定（Navara）</h2>
+      <p class="muted">地図エンジンは <a href="https://github.com/maplibre/navara" target="_blank" rel="noopener">MapLibre Navara</a>（three.js ベースの 3D 地球儀, beta）。地球儀表示のみで、Web メルカトル投影には未対応です。</p>
+      <label>背景 <select id="baseMap"><option value="osm">OSM 標準 (raster)</option><option value="xyz">任意 XYZ タイル</option><option value="openfreemap">OpenFreeMap (vector・実験的)</option></select></label>
       <div id="xyzRow" class="row" hidden><input id="xyzUrl" type="url" placeholder="https://…/{z}/{x}/{y}.png" /><button id="xyzApply">適用</button></div>
       <label class="check"><input id="terrain" type="checkbox" checked /> 地形（Mapterhorn 標高）</label>
-      <label class="check"><input id="hideBase3d" type="checkbox" checked /> 背景の 3D 建物を隠す</label>
-      <label class="check"><input id="mapParts" type="checkbox" checked /> building:part（押し出し表示）</label>
-      <label class="check"><input id="mapErr" type="checkbox" /> 差分ヒートマップ（欠落+過剰 m）</label>
+      <label class="check"><input id="mapRecon" type="checkbox" checked /> OSM 復元（roof:shape 込み）</label>
+      <label class="check"><input id="mapOriginal" type="checkbox" /> glTF 元モデル</label>
+      <label class="check"><input id="mapDiff" type="checkbox" /> 欠落（赤）/ 過剰（青）ボクセル</label>
     </section>
 
     <footer>
@@ -97,7 +95,7 @@
   </aside>
 
   <main>
-    <div id="map"><div class="maplegend">地図上の押し出しは屋根形状を描けない（MapLibre の制約）ため最高高さで表示。屋根形状は下の 3D ビューで確認できます。</div></div>
+    <div id="map"><div class="maplegend">地図: OSM タグから復元した形状（屋根形状込み）を地形上に表示。クリックで配置位置を変更。</div></div>
     <div id="viewerWrap">
       <div id="viewer"></div>
       <div class="vbar">

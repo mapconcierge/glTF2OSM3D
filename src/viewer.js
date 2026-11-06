@@ -211,3 +211,38 @@ function subdivideRoof(a, b, c, step, z, tri, depth) {
   }
   tri([a[0], a[1], z(a[0], a[1])], [b[0], b[1], z(b[0], b[1])], [c[0], c[1], z(c[0], c[1])]);
 }
+
+/** 地図（Navara）に載せるオブジェクト群（モデル局所 ENU 座標） */
+export function buildMapObjects(model, res, ev) {
+  const std = (o) => new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide, ...o });
+  const step = Math.max(res.grid.c * 2, 0.3);
+  const recon = new THREE.Group();
+  for (const p of res.parts) {
+    const geo = partGeometry(p, step);
+    const colour = p.wallColour && !res.noColour ? p.wallColour : p.origin === 'stepped' ? STEPPED_COLOUR : SHAPE_COLOURS[p.shape] || '#999';
+    recon.add(new THREE.Mesh(geo, std({ color: colour, flatShading: true })));
+    recon.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25), new THREE.LineBasicMaterial({ color: 0x333333 })));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(model.tris, 3));
+  const col = new Float32Array(model.tris.length);
+  const c = new THREE.Color();
+  for (let t = 0; t < model.triMat.length; t++) {
+    const m = model.materials[model.triMat[t]].color;
+    c.setRGB(m[0], m[1], m[2], THREE.SRGBColorSpace);
+    for (let v = 0; v < 3; v++) col.set([c.r, c.g, c.b], t * 9 + v * 3);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  const original = new THREE.Mesh(g, std({ vertexColors: true, flatShading: true }));
+  const diff = new THREE.Group();
+  const box = new THREE.BoxGeometry(1, 1, 1);
+  for (const [segs, colour] of [[ev.lostSeg, 0xe31a1c], [ev.addSeg, 0x1f78b4]]) {
+    if (!segs.length) continue;
+    const m = new THREE.InstancedMesh(box, std({ color: colour }), segs.length);
+    const M = new THREE.Matrix4();
+    segs.forEach(([x, y, z0, z1], q) => { M.makeScale(res.grid.c, res.grid.c, z1 - z0).setPosition(x, y, (z0 + z1) / 2); m.setMatrixAt(q, M); });
+    diff.add(m);
+  }
+  return { recon, original, diff };
+}
