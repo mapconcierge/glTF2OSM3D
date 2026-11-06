@@ -1,0 +1,92 @@
+# glTF2OSM3D
+
+glTF の建物モデル（1 棟）を、OpenStreetMap の [Simple 3D Buildings](https://wiki.openstreetmap.org/wiki/Simple_3D_Buildings)（S3DB）タグによる `.osm` に変換し、**OSM では表現できない部分を説明つきで可視化する** ブラウザツールです。
+
+Converts a single glTF building model into an OpenStreetMap `.osm` file using Simple 3D Buildings tagging (`building:part`, `height`, `min_height`, `roof:shape`, …), and visualises — with explanations — which parts of the geometry cannot be represented in OSM.
+
+**デモ / Demo:** https://mapconcierge.github.io/glTF2OSM3D/
+
+## 概要
+
+- glTF/GLB を読み込み、地図上の任意の位置・向きに配置
+- メッシュを `building:part` の集合に自動分解し、`.osm`（JOSM で開ける API 0.6 形式）と GeoJSON を出力
+- 元モデルと OSM 表現の差分を定量化（体積 IoU、欠落/過剰体積、表面誤差）し、3D ビューで可視化
+  - **誤差ヒートマップ**: 元モデルの各面が OSM 形状からどれだけ離れているか（緑→黄→赤）
+  - **OSM 復元**: タグから再構成した形状（roof:shape ごとに色分け、段状近似はオレンジ）
+  - **欠落 / 過剰ボクセル**: glTF にあって OSM にない体積（赤）、その逆（青）
+  - 断面スライダーで内部も確認可能
+- 「OSM で表現できない／近似した要素」を自動検出して日本語で説明（曲面・テーパー壁、下向きの傾斜面、軒の出、小要素、地下部分、テクスチャなど）
+
+### 変換アルゴリズム
+
+1. **2.5D ボクセル化**: 水平グリッドの各セルから鉛直レイを投射し、面の向き（上向き/下向き）から占有区間 `[底, 頂]` を求める（重なったメッシュ、底の無いメッシュにも対応）
+2. **領域分割**: 底面高さが同じで隣接するセルを連結 → パートごとの `min_height`（キャンチレバー・ピロティ・アーチ）
+3. **屋根フィット**: 各領域の上面を `flat / skillion / gabled / hipped / pyramidal / round / dome / cone` に最小二乗フィット（最小外接矩形で棟方向を決定）。塔屋・煙突などの突出物は外れ値として別パートに分離
+4. **段状近似**: どのプリセットにも当てはまらない曲面・傾斜壁は、高さ方向のひな壇状パートに分解
+5. **ポリゴン化**: セル集合の輪郭を追跡し Douglas–Peucker で簡略化。穴や分離形状は `type=multipolygon`
+6. **評価**: 簡略化後のポリゴンとタグから形状を復元し、元メッシュと比較
+
+### OSM（S3DB）で表現できない主なもの
+
+| 要素 | 理由 | 本ツールの扱い |
+|---|---|---|
+| 曲面壁・傾いた壁（テーパー） | building:part は鉛直押し出しのみ | 段状パートで近似 |
+| プリセット外の屋根（複合屋根・ドーマー・自由曲面） | roof:shape は定型のみ、1 パート 1 屋根 | 突出物分離 or 段状近似 |
+| 下向きの傾斜面・曲面（アーチ、斜め天井） | min_height は水平な底面のみ | 底面高さ別のパートで段状近似 |
+| 軒の出・庇 | 確立したタグがない | 隣接パートに併合（壁を延長）または浮いた薄いパート |
+| 地下部分 | height/min_height は地上の高さ | 切り捨て |
+| テクスチャ・細部（窓、手すり等） | 色タグ・解析解像度の限界 | 平均色を `building:colour` / `roof:colour` に |
+
+## 使い方
+
+### Web 版
+1. `.glb`（または `.gltf` + `.bin` + テクスチャ）をドロップ、もしくはサンプルを選択
+2. 上方向軸（glTF 標準は Y-up）・縮尺（メートル換算）・地盤面オフセットを確認
+3. 地図をクリック／マーカーをドラッグして配置、向きをスライダーで調整
+4. 結果パネルで「表現できない要素」と誤差を確認し、必要ならパラメータ（解析セル、段の高さ、屋根許容 RMS、最小パート面積）を調整して再変換
+5. `.osm をダウンロード` → JOSM 等で確認
+
+### ローカル開発
+```bash
+npm install
+npm run dev      # 開発サーバー
+npm run build    # dist/ へビルド（GitHub Pages は Actions で自動デプロイ）
+npm test         # サンプル 3 件を Node 上で変換して統計を表示
+npm run samples  # public/samples/*.glb を再生成
+node scripts/test-convert.mjs path/to/model.glb out.osm   # CLI で変換
+```
+
+### 座標系
+- モデル座標: glTF（Y-up, メートル）→ 局所 ENU（x=東, y=北, z=上）。原点はバウンディングボックス底面中心
+- 出力: WGS84 経緯度（EPSG:4326）。配置点まわりの局所接平面近似（GRS80 楕円体の子午線/卯酉線曲率半径）で変換。建物 1 棟規模（数百 m 以内）を想定
+- `height` / `min_height` は地盤面（モデル最下点＋オフセット）からの高さ [m]
+
+### 地図
+- MapLibre GL JS（Globe / Web Mercator 切替）
+- 背景: OpenFreeMap（デフォルト）/ OSM 標準タイル / 任意 XYZ タイル URL
+- 地形: [Mapterhorn](https://mapterhorn.com/) 標高タイル（terrarium）
+- 地図上の押し出し表示は MapLibre の `fill-extrusion` のため屋根形状を描けません（3D ビューで確認）
+
+## 注意
+
+- 生成データは自動変換の結果です。実在建物を OpenStreetMap にアップロードする場合は、[インポートガイドライン](https://wiki.openstreetmap.org/wiki/Import/Guidelines)、元モデルのライセンス、位置合わせを必ず確認してください
+- `roof:shape` の解釈（棟の向き等）はレンダラー（OSM2World, F4 Map, OSM Buildings など）ごとに異なります。「OSM 復元」表示は本ツールによる 1 つの解釈です
+- 街区全体の一括変換ではなく、建物 1 棟ずつの変換を想定しています
+
+## データソース・ライセンス
+
+- コード・サンプルモデル（`scripts/make-samples.mjs` で生成）: [CC0 1.0](LICENSE)
+- 出力 `.osm` を OpenStreetMap に投稿した場合、そのデータは [ODbL](https://opendatacommons.org/licenses/odbl/) の下で提供されます
+- 地図: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)、[OpenFreeMap](https://openfreemap.org/)、[OpenMapTiles](https://openmaptiles.org/)
+- 標高: © [Mapterhorn](https://mapterhorn.com/attribution)
+- ライブラリ: [MapLibre GL JS](https://maplibre.org/)（BSD-3-Clause）、[three.js](https://threejs.org/)（MIT）、[glTF Transform](https://gltf-transform.dev/)（MIT, サンプル生成のみ）
+
+## 著者
+
+古橋大地 / Taichi Furuhashi — 青山学院大学 地球社会共生学部 古橋研究室（Furuhashi Lab）
+
+## 関連リンク
+
+- [Simple 3D Buildings – OSM Wiki](https://wiki.openstreetmap.org/wiki/Simple_3D_Buildings)
+- [Key:roof:shape – OSM Wiki](https://wiki.openstreetmap.org/wiki/Key:roof:shape)
+- [glTF 2.0 Specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html)

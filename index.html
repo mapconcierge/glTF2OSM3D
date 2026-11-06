@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>glTF2OSM3D</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath d=%22M2 14V7l4-3 4 3v7z%22 fill=%22%23fc8d62%22/%3E%3Cpath d=%22M10 14V4h4v10z%22 fill=%22%238da0cb%22/%3E%3C/svg%3E" />
+  <meta name="description" content="glTF の建物モデルを OpenStreetMap の Simple 3D Buildings タグ（building:part 等）による .osm に変換し、OSM で表現できない部分を可視化するツール" />
+</head>
+<body>
+  <aside id="side">
+    <header>
+      <h1>glTF2OSM3D</h1>
+      <p class="lead">glTF の建物 1 棟を OSM <a href="https://wiki.openstreetmap.org/wiki/Simple_3D_Buildings" target="_blank" rel="noopener">Simple 3D Buildings</a> の .osm に変換し、表現できない部分を可視化します。</p>
+    </header>
+
+    <section>
+      <h2>1. glTF を読み込む</h2>
+      <label id="drop" class="drop">
+        <input type="file" id="file" accept=".glb,.gltf,.bin,.png,.jpg,.jpeg,.webp,.ktx2" multiple />
+        <span>.glb / .gltf をドロップ、またはクリックして選択<br><small>.gltf は .bin・テクスチャも同時に選択</small></span>
+      </label>
+      <select id="sample" aria-label="サンプル"></select>
+      <div class="row"><span class="muted">読込中:</span> <b id="modelName">—</b></div>
+      <div class="grid2">
+        <label>上方向軸 <select id="upAxis"><option value="y">Y-up（glTF 標準）</option><option value="z">Z-up</option></select></label>
+        <label>縮尺（→ m） <input id="scale" type="number" value="1" step="any" min="0" /></label>
+        <label>地盤面オフセット (m) <input id="groundOffset" type="number" value="0" step="0.1" title="モデル最下点から地盤面までの高さ。地下部分がある場合に指定" /></label>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. 配置する</h2>
+      <p class="muted">地図をクリック、または赤いマーカーをドラッグ。</p>
+      <div class="grid2">
+        <label>経度 <input id="lon" type="number" step="0.0000001" /></label>
+        <label>緯度 <input id="lat" type="number" step="0.0000001" /></label>
+      </div>
+      <label>向き（時計回り） <span id="headingVal">0°</span><input id="heading" type="range" min="0" max="359" step="1" value="0" /></label>
+    </section>
+
+    <section>
+      <h2>3. 変換パラメータ</h2>
+      <div class="grid2">
+        <label>解析セル (m) <input id="cellSize" type="number" step="0.05" min="0.05" placeholder="自動" /></label>
+        <label>段の高さ (m) <input id="stepHeight" type="number" step="0.1" min="0.1" /></label>
+        <label>屋根許容 RMS (m) <input id="roofTol" type="number" step="0.05" min="0.05" /></label>
+        <label>最小パート面積 (m²) <input id="minPartArea" type="number" step="0.1" min="0" /></label>
+        <label>誤差の許容 (m) <input id="errTol" type="number" step="0.1" min="0.05" value="0.5" /></label>
+        <label class="check"><input id="mergeEaves" type="checkbox" checked /> 軒の出を併合</label>
+      </div>
+      <button id="convert" class="primary">変換を実行</button>
+      <div id="status" role="status"></div>
+    </section>
+
+    <section>
+      <h2>4. 結果と「表現できない部分」</h2>
+      <div id="report" class="report"><p class="muted">モデルを読み込むと表示されます。</p></div>
+    </section>
+
+    <section>
+      <h2>5. 出力</h2>
+      <div class="grid2">
+        <label>name <input id="osmName" type="text" /></label>
+        <label>building= <input id="buildingType" type="text" value="yes" /></label>
+        <label class="check"><input id="optColours" type="checkbox" checked /> 色タグ</label>
+        <label class="check"><input id="optLevels" type="checkbox" /> 階数を推定</label>
+        <label>階高 (m) <input id="floorHeight" type="number" value="3" step="0.1" /></label>
+      </div>
+      <div class="btns">
+        <button id="dlOsm" class="primary">.osm をダウンロード</button>
+        <button id="dlGeojson">GeoJSON</button>
+        <button id="dlShot">3D 画像</button>
+      </div>
+      <p class="muted" id="osmStats"></p>
+      <details><summary>.osm プレビュー</summary><pre id="osmPreview"></pre></details>
+      <p class="warn">⚠ 生成データは自動変換結果です。実在建物を OpenStreetMap にアップロードする場合は、<a href="https://wiki.openstreetmap.org/wiki/Import/Guidelines" target="_blank" rel="noopener">インポートガイドライン</a>とモデルのライセンスを確認し、位置合わせを手作業で検証してください。</p>
+    </section>
+
+    <section>
+      <h2>地図設定</h2>
+      <div class="grid2">
+        <label>背景 <select id="baseMap"><option value="openfreemap">OpenFreeMap (vector)</option><option value="osm">OSM 標準 (raster)</option><option value="xyz">任意 XYZ タイル</option></select></label>
+        <label>投影 <select id="projection"><option value="globe">Globe</option><option value="mercator">Web Mercator</option></select></label>
+      </div>
+      <div id="xyzRow" class="row" hidden><input id="xyzUrl" type="url" placeholder="https://…/{z}/{x}/{y}.png" /><button id="xyzApply">適用</button></div>
+      <label class="check"><input id="terrain" type="checkbox" checked /> 地形（Mapterhorn 標高）</label>
+      <label class="check"><input id="hideBase3d" type="checkbox" checked /> 背景の 3D 建物を隠す</label>
+      <label class="check"><input id="mapParts" type="checkbox" checked /> building:part（押し出し表示）</label>
+      <label class="check"><input id="mapErr" type="checkbox" /> 差分ヒートマップ（欠落+過剰 m）</label>
+    </section>
+
+    <footer>
+      <a href="https://github.com/mapconcierge/glTF2OSM3D" target="_blank" rel="noopener">GitHub</a> · CC0 · Furuhashi Lab
+    </footer>
+  </aside>
+
+  <main>
+    <div id="map"><div class="maplegend">地図上の押し出しは屋根形状を描けない（MapLibre の制約）ため最高高さで表示。屋根形状は下の 3D ビューで確認できます。</div></div>
+    <div id="viewerWrap">
+      <div id="viewer"></div>
+      <div class="vbar">
+        <label><input id="vOriginal" type="checkbox" /> glTF 元モデル</label>
+        <label><input id="vError" type="checkbox" checked /> 誤差ヒートマップ</label>
+        <label><input id="vRecon" type="checkbox" /> OSM 復元</label>
+        <label><input id="vLost" type="checkbox" checked /> <span class="lost">■</span> 欠落</label>
+        <label><input id="vAdded" type="checkbox" /> <span class="added">■</span> 過剰</label>
+        <label class="clip">断面 <input id="clip" type="range" min="0" max="100" value="100" /> <span id="clipVal">なし</span></label>
+      </div>
+      <div class="vlegend">
+        <div><span class="grad"></span> 誤差 0 → 許容値 → 2×許容値以上 <span class="muted">（灰色: 内部面・接地面）</span></div>
+        <div class="muted">欠落 = glTF にあるが OSM にない体積 / 過剰 = OSM にあるが glTF にない体積</div>
+      </div>
+    </div>
+  </main>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

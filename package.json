@@ -1,0 +1,33 @@
+{
+  "name": "gltf2osm3d",
+  "version": "1.0.0",
+  "description": "glTF building model to OpenStreetMap Simple 3D Buildings (.osm) converter",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "samples": "node scripts/make-samples.mjs",
+    "test": "node scripts/test-convert.mjs public/samples/house_gabled.glb && node scripts/test-convert.mjs public/samples/complex_tower.glb && node scripts/test-convert.mjs public/samples/curved_tower.glb"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mapconcierge/glTF2OSM3D.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "CC0-1.0",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/mapconcierge/glTF2OSM3D/issues"
+  },
+  "homepage": "https://github.com/mapconcierge/glTF2OSM3D#readme",
+  "dependencies": {
+    "maplibre-gl": "^6.16.0",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "vite": "^8.3.6"
+  },
+  "private": true
+}
