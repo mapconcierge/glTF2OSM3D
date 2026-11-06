@@ -32,6 +32,7 @@ body {
 a { color: var(--accent); }
 #side { overflow-y: auto; border-right: 1px solid var(--line); background: var(--panel); padding: 0 16px 24px; }
 header h1 { font-size: 20px; margin: 16px 0 4px; letter-spacing: 0.02em; }
+header h1 .ver { font-size: 11px; font-weight: 500; color: var(--muted); margin-left: 6px; letter-spacing: 0; vertical-align: -0.35em; }
 .lead { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
 section { border-top: 1px solid var(--line); padding: 12px 0; }
 h2 { font-size: 14px; margin: 0 0 8px; }

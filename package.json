@@ -1,6 +1,6 @@
 {
   "name": "gltf2osm3d",
-  "version": "1.0.0",
+  "version": "0.9.0",
   "description": "glTF building model to OpenStreetMap Simple 3D Buildings (.osm) converter",
   "scripts": {
     "dev": "vite",

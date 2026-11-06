@@ -11,6 +11,7 @@ import { Viewer, SHAPE_COLOURS, STEPPED_COLOUR, buildMapObjects } from './viewer
 import { NavaraMap } from './navaraMap.js';
 
 const $ = (id) => document.getElementById(id);
+$('appVersion').textContent = `v${__APP_VERSION__}`;
 const BASE = import.meta.env.BASE_URL;
 // 青山学院大学 相模原キャンパス ウェスレー・チャペル（OSM way 99028196 の外形に合わせて位置・向きを推定）
 const AGU_CHAPEL_PLACE = { lon: 139.4018359, lat: 35.5664521, heading: 51.5 };
