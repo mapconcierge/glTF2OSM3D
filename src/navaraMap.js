@@ -109,7 +109,7 @@ export class NavaraMap {
   /** 配置（経緯度・方位）を更新 */
   setPlacement(place) {
     const p = this.place;
-    if (p.lon === place.lon && p.lat === place.lat && p.heading === place.heading) return;
+    if (p.lon === place.lon && p.lat === place.lat && p.heading === place.heading && (p.dz || 0) === (place.dz || 0)) return;
     this.place = { ...place };
     this.ready.then(() => {
       for (const [k, h] of Object.entries(this.handles)) {
@@ -120,7 +120,7 @@ export class NavaraMap {
   }
 
   geodetic() {
-    return { lng: this.place.lon, lat: this.place.lat, height: 0, heading: this.place.heading, heightReference: this.state.terrain ? 'terrain' : 'ellipsoid' };
+    return { lng: this.place.lon, lat: this.place.lat, height: this.place.dz || 0, heading: this.place.heading, heightReference: this.state.terrain ? 'terrain' : 'ellipsoid' };
   }
 
   /** three.js オブジェクト（モデル局所 ENU 座標）を登録・置換 */

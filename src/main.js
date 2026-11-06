@@ -9,6 +9,7 @@ import { assignColours } from './colours.js';
 import { buildOsm, partTags } from './osm.js';
 import { Viewer, SHAPE_COLOURS, STEPPED_COLOUR, buildMapObjects } from './viewer.js';
 import { NavaraMap } from './navaraMap.js';
+import { localToLngLat } from './geo.js';
 
 const $ = (id) => document.getElementById(id);
 $('appVersion').textContent = `v${__APP_VERSION__}`;
@@ -32,7 +33,7 @@ const SAMPLES = [
 ];
 
 const st = { gltf: null, name: '', model: null, res: null, ev: null, osm: null };
-const place = { ...AGU_CHAPEL_PLACE };
+const place = { ...AGU_CHAPEL_PLACE, dz: 0 };
 
 // ---------------- 初期化 ----------------
 const viewer = new Viewer($('viewer'));
@@ -64,7 +65,10 @@ document.querySelectorAll('.playBtn').forEach((b) => b.addEventListener('click',
 // 手動操作が始まったら自動回転を止め、操作した側を基準（master）にする
 viewer.controls.addEventListener('start', () => { cam.master = 'viewer'; if (cam.playing) setPlaying(false); });
 for (const ev of ['pointerdown', 'wheel', 'touchstart']) {
-  $('map').addEventListener(ev, () => { cam.master = 'map'; if (cam.playing) setPlaying(false); }, { capture: true, passive: true });
+  $('map').addEventListener(ev, (e) => {
+    if (e.target instanceof Element && e.target.closest('.playBtn, .viewTitle')) return; // ボタン・凡例上の操作はカメラ操作ではない
+    cam.master = 'map'; if (cam.playing) setPlaying(false);
+  }, { capture: true, passive: true });
 }
 viewer.onFrame = () => {
   if (!st.model) return;
@@ -86,7 +90,7 @@ $('sample').addEventListener('change', async (e) => {
   await guard(async () => {
     const r = await loadFromUrl(BASE + 'samples/' + smp.file);
     // 実在建物のサンプルは既知の位置・向きへ配置
-    if (smp.place) { place.heading = smp.place.heading; setPlace(smp.place.lon, smp.place.lat); }
+    if (smp.place) { place.heading = smp.place.heading; place.dz = 0; setPlace(smp.place.lon, smp.place.lat); }
     setGltf({ ...r, credit: smp.credit });
   });
 });
@@ -117,6 +121,7 @@ $('convert').addEventListener('click', () => convert(false));
 // ---------------- 配置 ----------------
 function setPlace(lon, lat) {
   place.lon = lon; place.lat = lat;
+  nudge.e = nudge.n = 0;
   syncPlaceInputs();
   mapView.setMarker(lon, lat);
   mapView.refreshGround();
@@ -127,7 +132,53 @@ function syncPlaceInputs() {
   $('lat').value = place.lat.toFixed(7);
   $('heading').value = place.heading;
   $('headingVal').textContent = `${place.heading}°`;
+  $('dz').value = +place.dz.toFixed(2);
 }
+$('dz').addEventListener('change', () => { place.dz = +$('dz').value || 0; mapView.setPlacement(place); });
+
+// ---------------- キーボードで位置オフセット（エディットビュー） ----------------
+// 矢印キー = 水平移動（画面の向き基準。↑ = 視線方向）、U / D = 上下。Shift = 大きく、⌘(Meta) / Ctrl = 細かく。
+const NUDGE = { normal: 0.5, coarse: 5, fine: 0.05 }; // m
+const nudge = { e: 0, n: 0, timer: 0, toastTimer: 0 };
+const toast = Object.assign(document.createElement('div'), { className: 'nudgeToast' });
+$('map').append(toast);
+// 地図をクリックしたらサイドバー入力欄のフォーカスを外し、すぐキー操作できるようにする
+$('map').addEventListener('pointerdown', () => { const a = document.activeElement; if (a instanceof HTMLElement && a !== document.body && !$('map').contains(a)) a.blur(); }, { capture: true });
+let geoTimer = 0;
+window.addEventListener('keydown', (ev) => {
+  const t = ev.target;
+  if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName))) return;
+  if (ev.altKey || !st.model) return;
+  const k = ev.key.length === 1 ? ev.key.toLowerCase() : ev.key;
+  const dirs = { ArrowUp: [0, 1, 0], ArrowDown: [0, -1, 0], ArrowRight: [1, 0, 0], ArrowLeft: [-1, 0, 0], u: [0, 0, 1], d: [0, 0, -1] };
+  const d = dirs[k];
+  if (!d) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const step = ev.metaKey || ev.ctrlKey ? NUDGE.fine : ev.shiftKey ? NUDGE.coarse : NUDGE.normal;
+  if (d[2]) place.dz = Math.round((place.dz + d[2] * step) * 1000) / 1000;
+  else {
+    // 画面上方向の地理方位 = 検証ビューの視線方位（モデル系）+ 配置の向き
+    const az = ((viewer.getOrbit().heading + place.heading) * Math.PI) / 180;
+    const fwd = d[1] * step, right = d[0] * step;
+    const de = fwd * Math.sin(az) + right * Math.cos(az);
+    const dn = fwd * Math.cos(az) - right * Math.sin(az);
+    [place.lon, place.lat] = localToLngLat(de, dn, { lon: place.lon, lat: place.lat, heading: 0 });
+    nudge.e += de; nudge.n += dn;
+    mapView.setMarker(place.lon, place.lat);
+  }
+  syncPlaceInputs();
+  mapView.setPlacement(place);
+  // 地表高の再取得と .osm 再生成はキーリピート中に連発しないよう間引く
+  clearTimeout(nudge.timer);
+  nudge.timer = setTimeout(() => mapView.refreshGround(), 300);
+  clearTimeout(geoTimer);
+  geoTimer = setTimeout(refreshGeo, 150);
+  const sg = (v) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2);
+  toast.textContent = `移動 ${step} m ｜ 累計 東 ${sg(nudge.e)} m・北 ${sg(nudge.n)} m ｜ 高さ ${sg(place.dz)} m`;
+  toast.classList.add('on');
+  clearTimeout(nudge.toastTimer);
+  nudge.toastTimer = setTimeout(() => toast.classList.remove('on'), 1500);
+}, { capture: true });
 $('lon').addEventListener('change', () => { cam.master = 'viewer'; setPlace(+$('lon').value, place.lat); });
 $('lat').addEventListener('change', () => { cam.master = 'viewer'; setPlace(place.lon, +$('lat').value); });
 $('heading').addEventListener('input', () => { place.heading = +$('heading').value; $('headingVal').textContent = `${place.heading}°`; refreshGeo(); });

@@ -32,12 +32,14 @@
 
     <section>
       <h2>2. 配置する</h2>
-      <p class="muted">地図をクリック、または赤いマーカーをドラッグ。</p>
+      <p class="muted">エディットビュー（地図）をクリックして配置。</p>
       <div class="grid2">
         <label>経度 <input id="lon" type="number" step="0.0000001" /></label>
         <label>緯度 <input id="lat" type="number" step="0.0000001" /></label>
       </div>
       <label>向き（時計回り） <span id="headingVal">0°</span><input id="heading" type="range" min="0" max="359" step="1" value="0" /></label>
+      <label>高さオフセット (m) <input id="dz" type="number" step="0.05" value="0" title="地図表示上でモデルを地表から上下にずらす量。OSM の height / min_height は地表基準のため .osm には出力されません" /></label>
+      <p class="muted">エディットビュー上で矢印キー＝水平移動、U / D＝上下（Shift で大きく、⌘ で細かく）。</p>
     </section>
 
     <section>
@@ -111,10 +113,24 @@
   </aside>
 
   <main>
-    <div id="map"><button class="playBtn mapPlay" type="button" aria-pressed="true">⏸ 一時停止</button><div class="maplegend">地図: OSM タグから復元した形状（屋根形状込み）を地形上に表示。下の 3D ビューとカメラ連動。クリックで配置位置を変更。</div></div>
+    <div id="map"><button class="playBtn mapPlay" type="button" aria-pressed="true">⏸ 一時停止</button><div class="viewTitle" tabindex="0" aria-describedby="editHelp">エディットビュー <span class="helpMark" aria-hidden="true">?</span>
+        <div id="editHelp" class="viewHelp" role="tooltip">
+          <b>エディットビュー（地図・配置の編集）</b>
+          <p>OSM タグから復元した形状（屋根形状込み）を地形上に表示します。下の検証ビューとカメラが連動します。</p>
+          <ul>
+            <li><b>クリック</b>: その地点へ配置位置を移動</li>
+            <li><b>ドラッグ / ホイール</b>: カメラ操作（自動回転は一時停止）</li>
+            <li><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd>: モデルを水平移動（画面の向き基準。↑ = 奥）</li>
+            <li><kbd>U</kbd> / <kbd>D</kbd>: モデルを上 / 下へ移動</li>
+            <li>移動量: 通常 0.5 m ／ <kbd>Shift</kbd> 併用 5 m ／ <kbd>⌘</kbd> 併用 0.05 m</li>
+          </ul>
+          <p class="muted">水平移動は経度・緯度（WGS84, EPSG:4326）に反映され .osm にも出力されます。上下オフセットは表示のみです。入力欄にフォーカスがあるときはキー操作は無効です。</p>
+        </div>
+      </div></div>
     <div id="viewerWrap">
       <div id="viewer"></div>
       <div class="vbar">
+        <span class="viewTitle inBar" title="変換結果の検証: 元 glTF・単純化モデル・OSM 復元形状の比較、誤差ヒートマップ、欠落/過剰体積、断面を表示します">検証ビュー</span>
         <button class="playBtn" type="button" aria-pressed="true" title="上下のビューを連動したまま自動でゆっくり周回します。ドラッグ等の手動操作で一時停止">⏸ 一時停止</button>
         <label><input id="vOriginal" type="checkbox" /> glTF 元モデル</label>
         <label><input id="vSimplified" type="checkbox" /> 単純化モデル</label>

@@ -81,7 +81,16 @@ table.parts th:nth-child(2), table.parts td:nth-child(2) { text-align: left; }
 footer { font-size: 12px; color: var(--muted); padding-top: 12px; border-top: 1px solid var(--line); }
 main { display: grid; grid-template-rows: 1fr 1fr; min-height: 0; }
 #map { position: relative; min-height: 0; }
-.maplegend { position: absolute; left: 8px; top: 8px; z-index: 2; max-width: 360px; font-size: 11px; background: color-mix(in srgb, var(--bg) 88%, transparent); padding: 4px 8px; border-radius: 6px; }
+.viewTitle { position: absolute; left: 8px; top: 8px; z-index: 3; font-size: 13px; font-weight: 700; background: color-mix(in srgb, var(--bg) 88%, transparent); padding: 4px 10px; border-radius: 6px; cursor: help; outline: none; }
+.viewTitle.inBar { position: static; padding: 0 6px 0 0; margin-right: 2px; border-right: 1px solid var(--line); border-radius: 0; background: none; }
+.helpMark { display: inline-grid; place-items: center; width: 15px; height: 15px; margin-left: 4px; border-radius: 50%; border: 1px solid currentColor; font-size: 10px; opacity: .7; }
+.viewHelp { display: none; position: absolute; left: 0; top: calc(100% + 6px); width: min(380px, calc(100vw - 48px)); font-size: 12px; font-weight: 400; line-height: 1.5; background: var(--bg); border: 1px solid var(--line); padding: 8px 12px; border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / .18); cursor: default; }
+.viewHelp p { margin: 4px 0; }
+.viewHelp ul { margin: 4px 0; padding-left: 18px; }
+.viewTitle:hover .viewHelp, .viewTitle:focus .viewHelp, .viewTitle:focus-within .viewHelp { display: block; }
+kbd { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 0 4px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; margin: 0 1px; }
+.nudgeToast { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 3; font-size: 12px; background: color-mix(in srgb, var(--bg) 92%, transparent); padding: 4px 10px; border-radius: 6px; pointer-events: none; opacity: 0; transition: opacity .3s; }
+.nudgeToast.on { opacity: 1; }
 #viewerWrap { position: relative; min-height: 0; border-top: 1px solid var(--line); }
 #viewer { position: absolute; inset: 0; }
 .vbar { position: absolute; left: 8px; top: 8px; right: 8px; display: flex; flex-wrap: wrap; gap: 4px 12px; background: color-mix(in srgb, var(--bg) 88%, transparent); padding: 4px 10px; border-radius: 6px; font-size: 12px; }
