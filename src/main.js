@@ -198,7 +198,7 @@ function showToast(text) {
 }
 
 // ---------------- キーボード操作（エディットビュー） ----------------
-// 矢印キー = 水平移動（画面の向き基準。↑ = 視線方向）、U / D = 上下、R = 時計回りに回転。
+// 矢印キー = 水平移動（画面の向き基準。↑ = 視線方向）、U / D = 上下、R = 時計回り / L = 反時計回りに回転。
 // Shift = 大きく、⌘(Meta) / Ctrl = 細かく。
 const NUDGE = { normal: 0.5, coarse: 5, fine: 0.05 }; // m
 const ROTATE = { normal: 1, coarse: 15, fine: 0.1 }; // 度
@@ -223,16 +223,17 @@ window.addEventListener('keydown', (ev) => {
 
   const dirs = { ArrowUp: [0, 1, 0], ArrowDown: [0, -1, 0], ArrowRight: [1, 0, 0], ArrowLeft: [-1, 0, 0], u: [0, 0, 1], d: [0, 0, -1] };
   const d = dirs[k];
-  if (!d && k !== 'r') return;
+  const rot = k === 'r' ? 1 : k === 'l' ? -1 : 0; // R = 時計回り、L = 反時計回り
+  if (!d && !rot) return;
   ev.preventDefault(); ev.stopPropagation();
-  const tbl = k === 'r' ? ROTATE : NUDGE;
+  const tbl = rot ? ROTATE : NUDGE;
   const step = mod ? tbl.fine : ev.shiftKey ? tbl.coarse : tbl.normal;
 
-  if (k === 'r') {
+  if (rot) {
     recordUndo('rotate');
-    place.heading = normDeg(place.heading + step);
+    place.heading = normDeg(place.heading + rot * step);
     applyPlacement(false);
-    showToast(`回転 +${step}°（時計回り） ｜ 向き ${fmtDeg(place.heading)}`);
+    showToast(`回転 ${rot > 0 ? '+' : '−'}${step}°（${rot > 0 ? '時計回り' : '反時計回り'}） ｜ 向き ${fmtDeg(place.heading)}`);
     return;
   }
   if (d[2]) {

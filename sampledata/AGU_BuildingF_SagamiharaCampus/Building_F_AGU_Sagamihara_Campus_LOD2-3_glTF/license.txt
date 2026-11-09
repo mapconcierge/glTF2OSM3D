@@ -1,0 +1,11 @@
+Model Information:
+* title:	Building F, AGU Sagamihara Campus (LOD2-3)
+* source:	https://sketchfab.com/3d-models/building-f-agu-sagamihara-campus-lod2-3-7d7b0d0d0a454a54aa50528f6483e2c6
+* author:	ibukilego (https://sketchfab.com/ibukilego)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Building F, AGU Sagamihara Campus (LOD2-3)" (https://sketchfab.com/3d-models/building-f-agu-sagamihara-campus-lod2-3-7d7b0d0d0a454a54aa50528f6483e2c6) by ibukilego (https://sketchfab.com/ibukilego) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
