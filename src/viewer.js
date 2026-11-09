@@ -257,6 +257,21 @@ export function modelGeometry(model, smooth = false) {
 }
 
 /** 地図（Navara）に載せるオブジェクト群（モデル局所 ENU 座標） */
+/** 選択中パートの強調表示（黄色の半透明面＋常に手前に描く輪郭線, モデル局所 ENU） */
+export function buildHighlight(part, res) {
+  const geo = partGeometry(part, Math.max(res.grid.c * 2, 0.3));
+  geo.computeBoundingBox();
+  const c = geo.boundingBox.getCenter(new THREE.Vector3());
+  const g = new THREE.Group();
+  const fill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffd400, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25), new THREE.LineBasicMaterial({ color: 0xffd400, depthTest: false, transparent: true }));
+  edges.renderOrder = 10;
+  // わずかに拡大して元の面と重ならないようにする
+  for (const o of [fill, edges]) { o.position.copy(c).multiplyScalar(-0.004); o.scale.setScalar(1.004); }
+  g.add(fill, edges);
+  return g;
+}
+
 export function buildMapObjects(model, res, ev, simplified) {
   const std = (o) => new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide, ...o });
   const step = Math.max(res.grid.c * 2, 0.3);
@@ -264,7 +279,9 @@ export function buildMapObjects(model, res, ev, simplified) {
   for (const p of res.parts) {
     const geo = partGeometry(p, step);
     const colour = p.wallColour && !res.noColour ? p.wallColour : p.origin === 'stepped' ? STEPPED_COLOUR : SHAPE_COLOURS[p.shape] || '#999';
-    recon.add(new THREE.Mesh(geo, std({ color: colour, flatShading: true })));
+    const mesh = new THREE.Mesh(geo, std({ color: colour, flatShading: true }));
+    mesh.userData.partId = p.id; // エディットビューでの面の選択用
+    recon.add(mesh);
     recon.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25), new THREE.LineBasicMaterial({ color: 0x333333 })));
   }
   const g = new THREE.BufferGeometry();

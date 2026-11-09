@@ -1,13 +1,13 @@
 import './style.css';
 import { Group as THREE_Group } from 'three';
 import { loadFromFiles, loadFromUrl, sceneToModel } from './loader.js';
-import { analyze, autoCellSize, voxelize, DEFAULT_OPTIONS } from './analyze.js';
+import { analyze, autoCellSize, voxelize, polygonize, DEFAULT_OPTIONS } from './analyze.js';
 import { evaluate, compareVolumes } from './evaluate.js';
 import { simplifyModel, meshesToModel, SIMPLIFY_DEFAULTS } from './simplify.js';
 import { exportGlb } from './exportGlb.js';
 import { assignColours } from './colours.js';
 import { buildOsm, partTags } from './osm.js';
-import { Viewer, SHAPE_COLOURS, STEPPED_COLOUR, buildMapObjects } from './viewer.js';
+import { Viewer, SHAPE_COLOURS, STEPPED_COLOUR, buildMapObjects, buildHighlight } from './viewer.js';
 import { NavaraMap } from './navaraMap.js';
 import { localToLngLat, lngLatToLocal } from './geo.js';
 
@@ -32,12 +32,13 @@ const SAMPLES = [
   { file: 'curved_tower.glb', label: '合成: 自由曲面タワー（回転体）' },
 ];
 
-const st = { gltf: null, name: '', model: null, res: null, ev: null, osm: null };
+// resAll = 変換結果（全パート）、res = 手動削除を反映した結果。gen は変換のたびに増える世代番号（アンドゥ履歴の照合用）
+const st = { gltf: null, name: '', model: null, resAll: null, res: null, ev: null, osm: null, deleted: new Set(), gen: 0, sel: null };
 const place = { ...AGU_CHAPEL_PLACE, dz: 0 };
 
 // ---------------- 初期化 ----------------
 const viewer = new Viewer($('viewer'));
-const mapView = new NavaraMap($('map'), { center: [place.lon, place.lat], onPick: (lng, lat) => { recordUndo(''); setPlace(lng, lat); } });
+const mapView = new NavaraMap($('map'), { center: [place.lon, place.lat] });
 window.__map = mapView; // デバッグ用
 window.__viewer = viewer; // デバッグ用
 const darkMq = matchMedia('(prefers-color-scheme: dark)');
@@ -66,12 +67,13 @@ document.querySelectorAll('.playBtn').forEach((b) => b.addEventListener('click',
 viewer.controls.addEventListener('start', () => { cam.master = 'viewer'; if (cam.playing) setPlaying(false); });
 for (const ev of ['pointerdown', 'wheel', 'touchstart']) {
   $('map').addEventListener(ev, (e) => {
-    if (e.target instanceof Element && e.target.closest('.playBtn, .viewTitle')) return; // ボタン・凡例上の操作はカメラ操作ではない
+    if (e.target instanceof Element && e.target.closest('.playBtn, .editHead')) return; // ボタン・凡例上の操作はカメラ操作ではない
     cam.master = 'map'; if (cam.playing) setPlaying(false);
   }, { capture: true, passive: true });
 }
 viewer.onFrame = () => {
   if (!st.model) return;
+  mapView.followOrbit = cam.master === 'viewer';
   if (cam.master === 'viewer') mapView.setOrbit(viewer.getOrbit());
   else {
     const r = mapView.readOrbit();
@@ -144,7 +146,7 @@ function syncPlaceInputs() {
 // ---------------- 配置のアンドゥ / リドゥ（Ctrl/⌘+Z、Ctrl/⌘+Shift+Z・Ctrl+Y） ----------------
 // 同じ種類の操作が短時間に続く場合（キーリピート・スライダーのドラッグ）は 1 回分としてまとめる
 const history = { undo: [], redo: [], lastKind: '', lastTime: 0 };
-const snap = () => ({ lon: place.lon, lat: place.lat, heading: place.heading, dz: place.dz });
+const snap = () => ({ lon: place.lon, lat: place.lat, heading: place.heading, dz: place.dz, gen: st.gen, deleted: [...st.deleted] });
 function recordUndo(kind) {
   const now = performance.now();
   if (kind && kind === history.lastKind && now - history.lastTime < 800) { history.lastTime = now; return; }
@@ -159,8 +161,17 @@ function restore(from, to, label) {
   if (!s) { showToast(label === '元に戻す' ? '元に戻せる操作はありません' : 'やり直せる操作はありません'); return; }
   to.push(snap());
   history.lastKind = '';
-  Object.assign(place, s);
+  const { deleted, gen, ...pl } = s;
+  Object.assign(place, pl);
   applyPlacement(true);
+  // 同じ変換結果（世代）の履歴なら、パートの手動削除も復元
+  if (gen === st.gen && (deleted.length !== st.deleted.size || deleted.some((id) => !st.deleted.has(id)))) {
+    st.deleted = new Set(deleted);
+    if (st.sel != null && st.deleted.has(st.sel.id)) st.sel = null;
+    rebuildAfterEdit();
+    showToast(`${label}: パートの削除（削除中 ${st.deleted.size} 件）`);
+    return;
+  }
   showToast(`${label}: 経度 ${place.lon.toFixed(7)}・緯度 ${place.lat.toFixed(7)}・向き ${fmtDeg(place.heading)}・高さ ${place.dz >= 0 ? '+' : '−'}${Math.abs(place.dz).toFixed(2)} m`);
 }
 
@@ -207,6 +218,9 @@ window.addEventListener('keydown', (ev) => {
     return;
   }
 
+  if ((k === 'Delete' || k === 'Backspace') && st.sel) { ev.preventDefault(); ev.stopPropagation(); deleteSelected(); return; }
+  if (k === 'Escape' && st.sel) { ev.preventDefault(); selectPart(null); return; }
+
   const dirs = { ArrowUp: [0, 1, 0], ArrowDown: [0, -1, 0], ArrowRight: [1, 0, 0], ArrowLeft: [-1, 0, 0], u: [0, 0, 1], d: [0, 0, -1] };
   const d = dirs[k];
   if (!d && k !== 'r') return;
@@ -238,6 +252,117 @@ window.addEventListener('keydown', (ev) => {
   const sg = (v) => (Math.abs(v) < 0.005 ? '±' : v > 0 ? '+' : '−') + Math.abs(v).toFixed(2);
   showToast(`移動 ${step} m ｜ 累計 東 ${sg(ae)} m・北 ${sg(an)} m ｜ 高さ ${sg(place.dz)} m`);
 }, { capture: true });
+
+// ---------------- エディットビュー: 面（パート）の選択・ソース表示・削除・画面中央へ再配置 ----------------
+// クリック（ドラッグでない短い押下）で OSM 復元形状の面を選択。面は 1 つの OSM 要素（building:part）に対応する。
+const press = { x: 0, y: 0, t: 0, on: false };
+$('map').addEventListener('pointerdown', (e) => {
+  press.on = e.button === 0 && !(e.target instanceof Element && e.target.closest('.editHead, .playBtn'));
+  Object.assign(press, { x: e.clientX, y: e.clientY, t: performance.now() });
+});
+$('map').addEventListener('pointerup', (e) => {
+  if (!press.on || !st.res) return;
+  press.on = false;
+  if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > 5 || performance.now() - press.t > 600) return; // ドラッグはカメラ操作
+  if (!$('mapRecon').checked) { showToast('面を選択するには「地図に表示: OSM 復元」をオンにしてください'); return; }
+  const hit = mapView.pick('recon', e.clientX, e.clientY);
+  const id = hit?.object.userData.partId;
+  if (id == null) { selectPart(null); return; }
+  // 面の種類: 法線が上向き → 屋根面、ほぼ水平 → 壁面、下向き → 底面（min_height の下面）
+  const nz = hit.normal.z;
+  selectPart(id, nz > 0.3 ? '屋根面' : nz < -0.3 ? '底面' : '壁面');
+});
+
+function selectPart(id, face) {
+  st.sel = id == null ? null : { id, face };
+  updateSelection();
+}
+
+/** 選択状態を UI・強調表示・ソース表示に反映 */
+function updateSelection() {
+  const p = st.sel && st.res?.parts.find((q) => q.id === st.sel.id);
+  if (st.sel && !p) st.sel = null;
+  for (const id of ['btnSource', 'btnDelete', 'btnDeselect']) $(id).disabled = !p;
+  $('selInfo').hidden = !p;
+  if (!p) {
+    $('srcPanel').hidden = true;
+    $('btnSource').setAttribute('aria-pressed', 'false');
+    mapView.setObjectVisible('select', false);
+    return;
+  }
+  const t = partTags(p, place, osmOptions());
+  const kv = ['roof:shape', 'height', 'min_height', 'roof:height'].filter((k) => t[k] != null).map((k) => `${k}=${t[k]}`).join(', ');
+  $('selInfo').innerHTML = `選択中: <b>パート #${p.id}</b>（${esc(st.sel.face)}）<br><span class="muted">${esc(kv)}</span>`;
+  if (!$('srcPanel').hidden) $('srcCode').textContent = st.osm?.partSource(p.id) || '';
+  mapView.setObject('select', buildHighlight(p, st.res), { transparent: true, visible: true });
+}
+
+$('btnSource').addEventListener('click', () => {
+  if (!st.sel) return;
+  const show = $('srcPanel').hidden;
+  $('srcPanel').hidden = !show;
+  $('btnSource').setAttribute('aria-pressed', String(show));
+  if (show) $('srcCode').textContent = st.osm?.partSource(st.sel.id) || '';
+});
+$('btnDeselect').addEventListener('click', () => selectPart(null));
+$('btnDelete').addEventListener('click', () => deleteSelected());
+
+function deleteSelected() {
+  if (!st.sel || !st.res) return;
+  if (st.res.parts.length <= 1) { showToast('最後の 1 パートは削除できません'); return; }
+  const id = st.sel.id;
+  recordUndo('');
+  st.deleted.add(id);
+  st.sel = null;
+  rebuildAfterEdit();
+  showToast(`パート #${id} を削除しました（Ctrl / ⌘ + Z で元に戻す）`);
+}
+
+/** 手動削除を反映した結果: 削除パートを除き、建物外形（building=*）も削除パートだけが占めていたセルを除いて作り直す */
+function effectiveRes() {
+  const all = st.resAll;
+  if (!st.deleted.size) return all;
+  const parts = all.parts.filter((p) => !st.deleted.has(p.id));
+  const keep = new Set();
+  for (const p of parts) for (const s of p.samples) keep.add(s.k);
+  const gone = new Set();
+  for (const p of all.parts) if (st.deleted.has(p.id)) for (const s of p.samples) if (!keep.has(s.k)) gone.add(s.k);
+  const cells = [];
+  for (let k = 0; k < all.cellIv.length; k++) if (all.cellIv[k] && !gone.has(k)) cells.push(k);
+  return {
+    ...all, parts,
+    outline: polygonize(cells, all.grid, all.options.simplify * all.grid.c),
+    maxHeight: parts.reduce((a, p) => Math.max(a, p.H), 0),
+  };
+}
+
+/** パート削除（またはそのアンドゥ）後に評価・表示・.osm を更新 */
+function rebuildAfterEdit() {
+  st.res = effectiveRes();
+  st.ev = evaluate(st.model, st.res, { errTol: +$('errTol').value || 0.5, origIv: st.origIv });
+  viewer.update(st.model, st.res, st.ev, { recolour: true, simplified: st.simp?.display });
+  $('clip').dispatchEvent(new Event('input'));
+  renderReport();
+  const objs = buildMapObjects(st.model, st.res, st.ev, st.simp?.display);
+  mapView.setObject('recon', objs.recon);
+  mapView.setObject('diff', objs.diff);
+  refreshGeo();
+  updateSelection();
+}
+
+// オブジェクト全体（モデル原点 = 底面中心）を、エディットビューの画面中央が指す地表の位置へ移動。地図カメラは動かさない
+$('btnRecenter').addEventListener('click', () => {
+  if (!st.model) return;
+  const c = mapView.screenCenterLocal();
+  if (!c) { showToast('画面中央が地表を向いていません（カメラを下向きにしてください）'); return; }
+  if (cam.playing) setPlaying(false);
+  cam.master = 'map';
+  mapView.followOrbit = false;
+  recordUndo('');
+  const [lon, lat] = localToLngLat(c[0], c[1], place);
+  setPlace(lon, lat);
+  showToast(`画面中央へ再配置: 経度 ${lon.toFixed(7)}・緯度 ${lat.toFixed(7)}（WGS84）`);
+});
 
 $('lon').addEventListener('change', () => { cam.master = 'viewer'; recordUndo(''); setPlace(+$('lon').value, place.lat); });
 $('lat').addEventListener('change', () => { cam.master = 'viewer'; recordUndo(''); setPlace(place.lon, +$('lat').value); });
@@ -301,9 +426,11 @@ async function convert(reloadModel) {
     }
     // ---- ステージ2: OSM 3D タグ化（評価は常に元モデル基準） ----
     st.input = input;
-    st.res = analyze(input, opts);
-    assignColours(input, st.res);
-    const origIv = input === st.model ? undefined : voxelize(st.model, { vStep: st.res.options.vStep }, st.res.grid).cellIv;
+    st.resAll = analyze(input, opts);
+    assignColours(input, st.resAll);
+    st.deleted = new Set(); st.gen++; st.sel = null; // パート番号が変わるため手動削除・選択はリセット
+    st.res = st.resAll;
+    const origIv = st.origIv = input === st.model ? undefined : voxelize(st.model, { vStep: st.res.options.vStep }, st.res.grid).cellIv;
     st.ev = evaluate(st.model, st.res, { errTol: +$('errTol').value || 0.5, origIv });
     if (st.simp) st.simp.cmp = compareVolumes(origIv, voxelize(st.simp.display, { vStep: st.res.options.vStep }, st.res.grid).cellIv, st.res.grid);
     viewer.update(st.model, st.res, st.ev, { recolour: !reloadModel, simplified: st.simp?.display });
@@ -315,6 +442,7 @@ async function convert(reloadModel) {
     mapView.setObject('original', objs.original, { visible: $('mapOriginal').checked });
     mapView.setObject('diff', objs.diff, { visible: $('mapDiff').checked });
     refreshGeo();
+    updateSelection();
     if (reloadModel) cam.master = 'viewer'; // 新しいモデルでは 3D ビューの初期カメラに地図を合わせる
     status(`変換完了（${((performance.now() - t0) / 1000).toFixed(2)} 秒）`);
   });
@@ -378,6 +506,8 @@ function renderReport() {
 
   const issues = [];
   const add = (sev, title, qty, body) => issues.push({ sev, title, qty, body });
+  if (st.deleted.size) add('mid', '手動で削除したパート', `${st.deleted.size} パート（#${[...st.deleted].sort((x, y) => x - y).join(', #')}）`,
+    'エディットビューで選択して削除したパートは .osm / GeoJSON に出力されません。建物全体の外形（building=*）も、削除したパートだけが占めていた範囲を除いて作り直しています。一致度・欠落体積は削除後の形状で再計算しています。Ctrl / ⌘ + Z で元に戻せます（再変換するとリセット）。');
   if (stepped.length) add('high', '自由曲面・テーパー（傾いた壁）・プリセット外の屋根', `${stepped.length} パートに段状分解（段の高さ ≈ ${res.options.stepHeight} m）`,
     'Simple 3D Buildings の building:part は「水平な底面 (min_height) から鉛直に押し出した柱体 + roof:shape のプリセット屋根」しか表せません。連続的に変化する曲面や傾いた外壁は、高さ方向に分割した複数のパート（ひな壇状）で近似しました。3D ビューのオレンジ色のパートが該当します。段を細かくすると誤差は減りますがパート数が増え、OSM データとしての可読性・保守性が落ちます。');
   if (cats.wall.bad > 0.5) add('mid', '鉛直でない壁・壁面の凹凸', `${f1(cats.wall.bad)} m²（壁面の ${f1((100 * cats.wall.bad) / Math.max(1, cats.wall.area))}%）が許容誤差 ${ev.errTol} m 超`,

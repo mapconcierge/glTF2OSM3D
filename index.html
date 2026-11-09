@@ -32,7 +32,7 @@
 
     <section>
       <h2>2. 配置する</h2>
-      <p class="muted">エディットビュー（地図）をクリックして配置。</p>
+      <p class="muted">エディットビューの「オブジェクト全体を画面中央に再配置」ボタン、または経度・緯度の入力で配置。</p>
       <div class="grid2">
         <label>経度 <input id="lon" type="number" step="0.0000001" /></label>
         <label>緯度 <input id="lat" type="number" step="0.0000001" /></label>
@@ -113,23 +113,34 @@
   </aside>
 
   <main>
-    <div id="map"><button class="playBtn mapPlay" type="button" aria-pressed="true">⏸ 一時停止</button><div class="viewTitle" tabindex="0" aria-describedby="editHelp">エディットビュー <span class="helpMark" aria-hidden="true">?</span>
+    <div id="map"><button class="playBtn mapPlay" type="button" aria-pressed="true">⏸ 一時停止</button><div class="editHead">
+      <div class="viewTitle" tabindex="0" aria-describedby="editHelp">エディットビュー <span class="helpMark" aria-hidden="true">?</span>
         <div id="editHelp" class="viewHelp" role="tooltip">
           <b>エディットビュー（地図・配置の編集）</b>
           <p>OSM タグから復元した形状（屋根形状込み）を地形上に表示します。下の検証ビューとカメラが連動します。</p>
           <ul>
-            <li><b>クリック</b>: その地点へ配置位置を移動</li>
+            <li><b>クリック</b>: 建物の面を選択（面 = 1 つの OSM 要素 <code>building:part</code>）。何もない所をクリックで選択解除</li>
             <li><b>ドラッグ / ホイール</b>: カメラ操作（自動回転は一時停止）</li>
             <li><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd>: モデルを水平移動（画面の向き基準。↑ = 奥）</li>
             <li><kbd>U</kbd> / <kbd>D</kbd>: モデルを上 / 下へ移動</li>
             <li><kbd>R</kbd>: モデルを時計回りに回転</li>
             <li>移動量: 通常 0.5 m ／ <kbd>Shift</kbd> 併用 5 m ／ <kbd>⌘</kbd> 併用 0.05 m</li>
             <li>回転量: 通常 1° ／ <kbd>Shift</kbd> 併用 15° ／ <kbd>⌘</kbd> 併用 0.1°</li>
-            <li><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Z</kbd>: 元に戻す（<kbd>Shift</kbd> 併用でやり直し）</li>
+            <li><kbd>Delete</kbd> / <kbd>Backspace</kbd>: 選択中の面（パート）を削除、<kbd>Esc</kbd>: 選択解除</li>
+            <li><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Z</kbd>: 元に戻す（<kbd>Shift</kbd> 併用でやり直し）。配置と削除の両方が対象</li>
           </ul>
           <p class="muted">水平移動は経度・緯度（WGS84, EPSG:4326）に反映され .osm にも出力されます。上下オフセットは表示のみです。入力欄にフォーカスがあるときはキー操作は無効です。</p>
         </div>
-      </div></div>
+      </div>
+      <div class="editTools" role="toolbar" aria-label="エディットビューの操作">
+        <button id="btnRecenter" type="button" title="建物全体（底面中心）を、いま画面中央に見えている地表の位置へ移動します（カメラは動きません）">オブジェクト全体を画面中央に再配置</button>
+        <button id="btnSource" type="button" aria-pressed="false" disabled title="選択中の面（building:part）の OSM XML を表示">ソース表示</button>
+        <button id="btnDelete" type="button" disabled title="選択中の面（building:part）を .osm から削除（Delete キー。Ctrl/⌘+Z で元に戻す）">削除</button>
+        <button id="btnDeselect" type="button" disabled title="選択を解除（Esc キー）">選択解除</button>
+      </div>
+      <div id="selInfo" class="selInfo" hidden></div>
+      <div id="srcPanel" class="srcPanel" hidden><pre><code id="srcCode"></code></pre></div>
+    </div></div>
     <div id="viewerWrap">
       <div id="viewer"></div>
       <div class="vbar">

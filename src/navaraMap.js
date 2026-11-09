@@ -5,7 +5,7 @@
 // - 地形: Mapterhorn 標高タイル（terrarium, 512px）
 // 注意: Navara は地球儀表示のみで、Web メルカトル（2D）投影モードは提供されていない（v0.2.1 時点）。
 import * as THREE from 'three';
-import ThreeView, { MeshDesc, TERRARIUM_ELEVATION_DECODER, vector3ToGeodetic } from '@navaramap/three';
+import ThreeView, { MeshDesc, TERRARIUM_ELEVATION_DECODER } from '@navaramap/three';
 import { localToLngLat, lngLatToLocal } from './geo.js';
 import { DefaultPlugin } from '@navaramap/three-default-plugin';
 import { MapLibreStylePlugin } from '@navaramap/maplibre-style';
@@ -22,7 +22,12 @@ class Object3DMeshDesc extends MeshDesc {
   }
   // Navara は返したオブジェクトの行列を geodetic 配置で上書きするため、ENU→WUN 変換は子要素側に持たせる。
   // 再配置のたびに破棄されても元データが壊れないよう clone（ジオメトリ・マテリアルは共有）を返す。
-  createMesh() { const root = new THREE.Group(); root.add(this.config.object3d.object.clone()); return root; }
+  createMesh() {
+    const root = new THREE.Group();
+    root.add(this.config.object3d.object.clone());
+    this.config.object3d.onCreate?.(root); // 描画中のオブジェクト（ECEF 座標の matrixWorld を持つ）をピック用に通知
+    return root;
+  }
   getPassKey() { return this.config.object3d.transparent ? 'transparent' : 'opaque'; }
 }
 
@@ -30,14 +35,13 @@ class Object3DMeshDesc extends MeshDesc {
 const ENU_TO_WUN = new THREE.Matrix4().set(-1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1);
 
 export class NavaraMap {
-  constructor(el, { center, onPick }) {
+  constructor(el, { center }) {
     this.el = el;
-    this.onPick = onPick;
     this.state = { base: 'osm', xyz: '', terrain: true, photoreal: false };
     this.place = { lon: center[0], lat: center[1], heading: 0 };
     this.objects = {}; // key -> { object, transparent, visible }
     this.handles = {};
-    this.pickMode = true;
+    this.followOrbit = true; // false: 地図カメラを基準にする（配置変更時に地図カメラをモデルへ追従させない）
     this.ready = this.create();
     new ResizeObserver(() => this.view?.resize(el.clientWidth, el.clientHeight, window.devicePixelRatio)).observe(el);
   }
@@ -74,11 +78,6 @@ export class NavaraMap {
       ...(this.state.base === 'openfreemap' ? [{ attribution: 'OpenFreeMap © OpenMapTiles', attributionUrl: 'https://openfreemap.org/' }] : []),
       { attribution: '© Mapterhorn', attributionUrl: 'https://mapterhorn.com/attribution' },
     ]);
-    view.on('click', (ev) => {
-      if (!this.pickMode || !ev.map) return;
-      const g = vector3ToGeodetic(new THREE.Vector3(ev.map.x, ev.map.y, ev.map.z));
-      if (Number.isFinite(g.lng) && Number.isFinite(g.lat)) this.onPick(g.lng, g.lat);
-    });
     for (const key of Object.keys(this.objects)) this.mount(key);
     this.lookAt(camera);
     return view;
@@ -148,8 +147,9 @@ export class NavaraMap {
     if (this.handles[key]) { try { this.handles[key].delete(); } catch { v.deleteMeshById(this.handles[key].id); } delete this.handles[key]; }
     const o = this.objects[key];
     if (!o || !o.visible) return;
+    o.live = null;
     this.handles[key] = v.addMesh({
-      object3d: { object: o.object, transparent: o.transparent },
+      object3d: { object: o.object, transparent: o.transparent, onCreate: (root) => (o.live = root) },
       geodetic: this.geodetic(),
     });
     v.forceUpdate?.();
@@ -199,7 +199,7 @@ export class NavaraMap {
   async refreshGround() {
     await this.ready;
     this.groundH = await this.groundHeight(this.place.lon, this.place.lat);
-    if (this.lastOrbit) this.setOrbit(this.lastOrbit, true);
+    if (this.lastOrbit && this.followOrbit) this.setOrbit(this.lastOrbit, true);
   }
 
   /**
@@ -228,6 +228,50 @@ export class NavaraMap {
     const [x, y] = lngLatToLocal(g.lng, g.lat, this.place);
     const hm = (ori.heading - this.place.heading) * D, p = ori.pitch * D;
     return { pos: [x, y, g.height - this.groundH], dir: [Math.sin(hm) * Math.cos(p), Math.cos(hm) * Math.cos(p), Math.sin(p)] };
+  }
+
+  // ---- ピック（エディットビューでの面の選択） ----
+  /** 画面座標（clientX/Y）→ Navara のカメラ（ECEF の three.js PerspectiveCamera）からのレイ */
+  screenRay(clientX, clientY) {
+    const cam = this.view?.camera?.raw;
+    const canvas = this.el.querySelector('canvas.navara-canvas');
+    if (!cam || !canvas) return null;
+    const r = canvas.getBoundingClientRect();
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), cam);
+    return ray;
+  }
+
+  /**
+   * key のオブジェクト（描画中のもの）とレイの最初の交点。
+   * 戻り値 { object（交差した Mesh）, normal（Mesh 局所 = モデル局所 ENU の面法線）, point（同 ENU 座標） } | null
+   */
+  pick(key, clientX, clientY) {
+    const live = this.objects[key]?.visible && this.objects[key].live;
+    const ray = live && this.screenRay(clientX, clientY);
+    if (!ray) return null;
+    live.updateMatrixWorld(true);
+    const hit = ray.intersectObject(live, true).find((h) => h.object.isMesh && h.face);
+    if (!hit) return null;
+    return { object: hit.object, normal: hit.face.normal.clone(), point: hit.object.worldToLocal(hit.point.clone()) };
+  }
+
+  /** 画面中央のレイと、モデルの地表面（モデル局所 z = 0）の交点（モデル局所 ENU）。表示中のオブジェクトがなければ null */
+  screenCenterLocal() {
+    const o = Object.values(this.objects).find((x) => x.visible && x.live);
+    const canvas = this.el.querySelector('canvas.navara-canvas');
+    if (!o || !canvas) return null;
+    const r = canvas.getBoundingClientRect();
+    const ray = this.screenRay(r.left + r.width / 2, r.top + r.height / 2);
+    const frame = o.live.children[0]; // ENU→WUN ラッパーの clone: この局所座標 = モデル局所 ENU
+    if (!ray || !frame) return null;
+    frame.updateMatrixWorld(true);
+    const inv = frame.matrixWorld.clone().invert();
+    const origin = ray.ray.origin.clone().applyMatrix4(inv);
+    const dir = ray.ray.direction.clone().transformDirection(inv);
+    if (dir.z > -1e-3) return null; // 地平線より上を見ている
+    const t = -origin.z / dir.z;
+    return [origin.x + dir.x * t, origin.y + dir.y * t];
   }
 
   // MapLibre 版で使っていた API（GeoJSON レイヤ）は Navara では three.js オブジェクトで代替

@@ -59,20 +59,27 @@ export function buildOsm(res, place, opt) {
     type: 'MultiPolygon',
     coordinates: polys.map((p) => [p.outer, ...p.holes].map((r) => { const c = r.map(([x, y]) => localToLngLat(x, y, place)); c.push(c[0]); return c; })),
   });
+  // 戻り値: この面（パート）を構成する OSM 要素 { ways: [way], rel: relation | null }（ソース表示用）
   const emitArea = (polys, tags) => {
+    let el;
     if (polys.length === 1 && polys[0].holes.length === 0) {
-      ringWay(polys[0].outer, tags);
+      const w = ringWay(polys[0].outer, tags);
+      el = { ways: w ? [w] : [], rel: null };
     } else {
-      const members = [];
+      const members = [], ws = [];
       for (const p of polys) {
         const o = ringWay(p.outer);
-        if (o) members.push({ ref: o.id, role: 'outer' });
-        for (const h of p.holes) { const w = ringWay(h); if (w) members.push({ ref: w.id, role: 'inner' }); }
+        if (o) { members.push({ ref: o.id, role: 'outer' }); ws.push(o); }
+        for (const h of p.holes) { const w = ringWay(h); if (w) { members.push({ ref: w.id, role: 'inner' }); ws.push(w); } }
       }
-      rels.push({ id: rid--, members, tags: { type: 'multipolygon', ...tags } });
+      const r = { id: rid--, members, tags: { type: 'multipolygon', ...tags } };
+      rels.push(r);
+      el = { ways: ws, rel: r };
     }
     features.push({ type: 'Feature', properties: { ...tags }, geometry: toGeo(polys) });
+    return el;
   };
+  const partElems = new Map(); // part.id -> 要素
 
   const parts = res.parts;
   const common = {};
@@ -80,37 +87,54 @@ export function buildOsm(res, place, opt) {
   const bType = opt.buildingType || 'yes';
 
   if (parts.length === 1) {
-    emitArea(parts[0].polygons, { building: bType, ...common, ...partTags(parts[0], place, opt) });
+    partElems.set(parts[0].id, emitArea(parts[0].polygons, { building: bType, ...common, ...partTags(parts[0], place, opt) }));
   } else {
     const maxH = Math.max(...parts.map((p) => p.H));
     const bt = { building: bType, ...common, height: r1(maxH) };
     if (opt.levels && opt.floorHeight > 0) bt['building:levels'] = String(Math.max(1, Math.round(Math.max(...parts.map((p) => p.E)) / opt.floorHeight)));
     if (opt.colours && res.wallColour) bt['building:colour'] = res.wallColour;
     emitArea(res.outline, bt);
-    for (const p of parts) emitArea(p.polygons, { 'building:part': 'yes', ...partTags(p, place, opt) });
+    for (const p of parts) partElems.set(p.id, emitArea(p.polygons, { 'building:part': 'yes', ...partTags(p, place, opt) }));
   }
 
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const tagXml = (tags) => Object.entries(tags).map(([k, v]) => `    <tag k="${esc(k)}" v="${esc(v)}"/>`).join('\n');
-  const L = ['<?xml version="1.0" encoding="UTF-8"?>', '<osm version="0.6" generator="glTF2OSM3D">'];
-  L.push(`  <!-- glTF2OSM3D による自動変換。実在建物でない場合や輸入ガイドラインに従わない場合は OSM へアップロードしないこと -->`);
-  for (const n of nodes.values()) L.push(`  <node id="${n.id}" visible="true" lat="${n.lat.toFixed(8)}" lon="${n.lon.toFixed(8)}"/>`);
-  for (const w of ways) {
+  const nodeXml = (n) => `  <node id="${n.id}" visible="true" lat="${n.lat.toFixed(8)}" lon="${n.lon.toFixed(8)}"/>`;
+  const wayXml = (L, w) => {
     L.push(`  <way id="${w.id}" visible="true">`);
     for (const r of w.refs) L.push(`    <nd ref="${r}"/>`);
     if (Object.keys(w.tags).length) L.push(tagXml(w.tags));
     L.push('  </way>');
-  }
-  for (const r of rels) {
+  };
+  const relXml = (L, r) => {
     L.push(`  <relation id="${r.id}" visible="true">`);
     for (const m of r.members) L.push(`    <member type="way" ref="${m.ref}" role="${m.role}"/>`);
     L.push(tagXml(r.tags));
     L.push('  </relation>');
-  }
+  };
+  const L = ['<?xml version="1.0" encoding="UTF-8"?>', '<osm version="0.6" generator="glTF2OSM3D">'];
+  L.push(`  <!-- glTF2OSM3D による自動変換。実在建物でない場合や輸入ガイドラインに従わない場合は OSM へアップロードしないこと -->`);
+  for (const n of nodes.values()) L.push(nodeXml(n));
+  for (const w of ways) wayXml(L, w);
+  for (const r of rels) relXml(L, r);
   L.push('</osm>');
+  const nodeById = new Map([...nodes.values()].map((n) => [n.id, n]));
+  /** 1 パート（building:part）分の OSM XML 断片。タグを持つ要素を先頭に（relation → way → node の順） */
+  const partSource = (id) => {
+    const el = partElems.get(id);
+    if (!el) return '';
+    const S = [];
+    if (el.rel) relXml(S, el.rel);
+    for (const w of el.ways) wayXml(S, w);
+    const seen = new Set();
+    for (const w of el.ways) for (const r of w.refs) if (!seen.has(r)) { seen.add(r); S.push(nodeXml(nodeById.get(r))); }
+    const head = `<!-- ${el.rel ? `relation ${el.rel.id}（multipolygon, way ${el.ways.length} 本）` : `way ${el.ways[0]?.id}`} / node ${seen.size} 個 -->`;
+    return head + '\n' + S.join('\n') + '\n';
+  };
   return {
     xml: L.join('\n') + '\n',
     geojson: { type: 'FeatureCollection', features },
     stats: { nodes: nodes.size, ways: ways.length, relations: rels.length },
+    partSource,
   };
 }
