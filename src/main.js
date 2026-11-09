@@ -27,6 +27,19 @@ const SAMPLES = [
     place: { lon: 139.4029083, lat: 35.5663779, heading: 320 },
     credit: 'This work is based on "<a href="https://sketchfab.com/3d-models/media-center-agu-sagamihara-campus-lod2-3-0b462fbe088e4616857ef30ecab54a06" target="_blank" rel="noopener">Media Center, AGU Sagamihara Campus (LOD2-3)</a>" by <a href="https://sketchfab.com/ibukilego" target="_blank" rel="noopener">ibukilego</a>, licensed under <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>',
   },
+  {
+    file: 'arena_agu_sagamihara.glb', label: 'A棟 アリーナ（青山学院大学 相模原キャンパス, LOD2-3）',
+    // OSM way 73984834「A棟」の外形に合わせて推定（外形内一致率 93%、外形の被覆率 98%。ほぼ対称形のため逆向きも 92% / 97% と近いが、
+    // 同じ作者の B棟・F棟（向き 320°・321°）と揃う 317.5° を採用）
+    place: { lon: 139.4026999, lat: 35.5672153, heading: 317.5 },
+    credit: 'This work is based on "<a href="https://sketchfab.com/3d-models/arena-agu-sagamihara-campus-lod2-3-a9353e925b904855ae8824036c978427" target="_blank" rel="noopener">Arena, AGU Sagamihara Campus (LOD2-3)</a>" by <a href="https://sketchfab.com/ibukilego" target="_blank" rel="noopener">ibukilego</a>, licensed under <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>',
+  },
+  {
+    file: 'building_f_agu_sagamihara.glb', label: 'F棟（青山学院大学 相模原キャンパス, LOD2-3）',
+    // OSM の「F棟」3 way（263743687, 344676276, 638092145）の和集合に合わせて推定（外形内一致率 93%、被覆率 99.6%、逆向き 67%）
+    place: { lon: 139.4013682, lat: 35.5673316, heading: 321 },
+    credit: 'This work is based on "<a href="https://sketchfab.com/3d-models/building-f-agu-sagamihara-campus-lod2-3-7d7b0d0d0a454a54aa50528f6483e2c6" target="_blank" rel="noopener">Building F, AGU Sagamihara Campus (LOD2-3)</a>" by <a href="https://sketchfab.com/ibukilego" target="_blank" rel="noopener">ibukilego</a>, licensed under <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>',
+  },
   { file: 'house_gabled.glb', label: '合成: 切妻屋根の住宅（煙突・軒の出あり）' },
   { file: 'complex_tower.glb', label: '合成: 複合ビル（塔・ドーム・ヴォールト・円錐台・キャンチレバー・アーチ門）' },
   { file: 'curved_tower.glb', label: '合成: 自由曲面タワー（回転体）' },
